@@ -1,0 +1,71 @@
+import type { User } from "@/types/user";
+
+export const users: User[] = [
+  {
+    id: "usr-001",
+    name: "Andi Saputra",
+    email: "andi@email.com",
+    phone: "0812 1111 2222",
+    city: "Jakarta",
+    role: "customer",
+    status: "active",
+    joinedAt: "2025-08-14T10:00:00+07:00",
+  },
+  {
+    id: "usr-002",
+    name: "Sari Wulandari",
+    email: "sari@neon.id",
+    phone: "0813 3333 4444",
+    city: "Jakarta",
+    role: "organizer",
+    status: "active",
+    joinedAt: "2025-03-02T09:00:00+07:00",
+  },
+  {
+    id: "usr-003",
+    name: "Budi Santoso",
+    email: "budi@email.com",
+    phone: "0812 5555 6666",
+    city: "Bandung",
+    role: "customer",
+    status: "active",
+    joinedAt: "2025-11-20T14:00:00+07:00",
+  },
+  {
+    id: "usr-004",
+    name: "Rina Pratiwi",
+    email: "admin@tiketku.id",
+    phone: "0811 7777 8888",
+    city: "Jakarta",
+    role: "super_admin",
+    status: "active",
+    joinedAt: "2025-01-05T08:00:00+07:00",
+  },
+  {
+    id: "usr-005",
+    name: "Dimas Prakoso",
+    email: "dimas@neon.id",
+    phone: "0857 9999 0000",
+    city: "Jakarta",
+    role: "gate_staff",
+    status: "active",
+    joinedAt: "2026-02-11T11:00:00+07:00",
+  },
+  {
+    id: "usr-006",
+    name: "Maya Anggraini",
+    email: "maya@email.com",
+    phone: "0821 1212 3434",
+    city: "Surabaya",
+    role: "customer",
+    status: "suspended",
+    joinedAt: "2026-04-19T16:00:00+07:00",
+  },
+];
+
+export const mockCredentials = {
+  customer: "usr-001",
+  organizer: "usr-002",
+  super_admin: "usr-004",
+  gate_staff: "usr-005",
+} as const;
