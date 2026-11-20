@@ -1,26 +1,224 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* ── Core palette ────────────────────────────────── */
+  --color-white: #ffffff;
+  --color-canvas: #f6f7f9;
+  --color-navy-950: #020617;
+  --color-navy-900: #0f172a;
+  --color-navy-800: #1e293b;
+  --color-navy-700: #334155;
+  --color-navy-600: #475569;
+  --color-blue-500: #2563eb;
+  --color-blue-400: #3b82f6;
+  --color-blue-100: #dbeafe;
+
+  /* Accent: used sparingly for highlights, never as a large surface. */
+  --color-gold-100: #fefce8;
+  --color-gold-300: #fde68a;
+  --color-gold-400: #fcd34d;
+  --color-gold-500: #fbbf24;
+  --color-gold-600: #92400e;
+
+  /* ── Semantic palette ───────────────────────────── */
+  --color-surface: #ffffff;
+  --color-muted: #64748b;
+  --color-line: #e5e9f0;
+  --color-success: #047857;
+  --color-success-soft: #ecfdf5;
+  --color-warning: #b45309;
+  --color-warning-soft: #fffbeb;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-info: #1d4ed8;
+  --color-info-soft: #eff6ff;
+
+  /* Cover-event accents */
+  --color-accent-teal: #0f766e;
+  --color-accent-violet: #6d28d9;
+  --color-accent-rose: #be123c;
+  --color-accent-orange: #c2410c;
+
+  /* ── Geometry ────────────────────────────────────── */
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+  --shadow-card:
+    0 1px 2px 0 color-mix(in srgb, var(--color-navy-900) 4%, transparent),
+    0 10px 28px -22px color-mix(in srgb, var(--color-navy-900) 25%, transparent);
+
+  /* ── Typography ───────────────────────────────────
+     Headings use a geometric voice, body copy a relaxed one.
+     Both are self-hosted by next/font in the root layout. */
+  --font-sans:
+    var(--font-body), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-display:
+    var(--font-heading), var(--font-body), ui-sans-serif, system-ui, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  body {
+    @apply bg-surface font-sans leading-normal text-navy-900 antialiased;
+  }
+  ::selection {
+    @apply bg-navy-900 text-white;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-navy-900/30;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-display text-navy-900;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  /* ── Surfaces & layout ──────────────────────────── */
+  .card {
+    @apply rounded-card border border-line bg-surface shadow-card;
+  }
+  .card-hover {
+    @apply transition duration-200 hover:-translate-y-0.5 hover:shadow-lg;
+  }
+  .page-container {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+  }
+  /* Shared rhythm for dashboard content and condensed page sections. */
+  .toolbar {
+    @apply flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between;
+  }
+  .stat-grid {
+    @apply grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4;
+  }
+  .section-stack {
+    @apply space-y-5 sm:space-y-6;
+  }
+
+  /* ── Buttons ──────────────────────────────────────
+     One primary action style; the remaining names are aliases
+     kept so existing call sites stay source-compatible. */
+  .btn-primary,
+  .btn-gold,
+  .btn-navy,
+  .btn-gold-navy {
+    @apply inline-flex items-center justify-center gap-2 rounded-control bg-navy-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-800 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-outline,
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-control border border-line bg-white px-4 py-2.5 text-sm font-semibold text-navy-900 transition hover:border-navy-900/25 hover:bg-canvas disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-control px-3 py-2 text-sm font-semibold text-navy-800 transition hover:bg-navy-900/5 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex items-center justify-center gap-2 rounded-control border border-danger/25 bg-danger-soft px-4 py-2.5 text-sm font-semibold text-danger transition hover:border-danger/50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-gold-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-control border border-white/25 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  /* ── Forms ──────────────────────────────────────── */
+  .input {
+    @apply w-full rounded-control border border-line bg-white px-3.5 py-2.5 text-sm text-navy-900 outline-none transition placeholder:text-muted/70 focus:border-navy-900/30 focus:ring-4 focus:ring-navy-900/5 disabled:cursor-not-allowed disabled:bg-canvas;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-navy-800;
+  }
+
+  /* ── Tables ─────────────────────────────────────── */
+  .th {
+    @apply whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted;
+  }
+  .td {
+    @apply px-4 py-3.5 text-sm text-navy-900;
+  }
+  .table-row {
+    @apply border-b border-line transition hover:bg-canvas last:border-0;
+  }
+
+  /* ── Typography ─────────────────────────────────── */
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-widest;
+  }
+  .type-hero {
+    @apply font-display text-5xl font-bold leading-[1.05] tracking-[-0.03em] sm:text-6xl lg:text-7xl;
+  }
+  /* Accent phrase only; weight and face follow the parent heading. */
+  .type-hero-accent {
+    @apply text-gold-300;
+  }
+  .type-page {
+    @apply font-display text-2xl font-bold leading-tight tracking-tight sm:text-3xl;
+  }
+  .type-section {
+    @apply font-display text-3xl font-bold leading-tight tracking-tight sm:text-4xl;
+  }
+  .type-subhead {
+    @apply font-display text-base font-bold leading-snug;
+  }
+  .type-label {
+    @apply font-display text-sm font-bold leading-snug;
+  }
+  .body-copy {
+    @apply font-sans text-sm leading-relaxed;
+  }
+  .body-copy-lg {
+    @apply font-sans text-base leading-relaxed;
+  }
+
+  /* ── Chips & pills ──────────────────────────────── */
+  .chip {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-white px-3 py-1.5 text-xs font-medium text-navy-700 transition hover:border-navy-900/20 hover:bg-canvas;
+  }
+  .chip-active {
+    @apply border-navy-900 bg-navy-900 text-white hover:border-navy-900 hover:bg-navy-800;
+  }
+
+  .dashed-rule {
+    @apply h-px w-full border-t border-dashed border-line;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hover {
+    @apply transition-none hover:translate-y-0;
+  }
+}
+
+@keyframes tiquet-trust-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.tiquet-trust-marquee {
+  animation: tiquet-trust-marquee 28s linear infinite;
+  will-change: transform;
+}
+
+.tiquet-trust-marquee:hover {
+  animation-play-state: paused;
+}
+
+/* Memastikan animasi mati jika pengguna menyalakan mode "Reduce Motion" di OS mereka */
+@media (prefers-reduced-motion: reduce) {
+  .card-hover {
+    @apply transition-none hover:translate-y-0;
+  }
+  .tiquet-trust-marquee {
+    animation: none;
+  }
 }
