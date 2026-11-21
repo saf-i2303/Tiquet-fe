@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, LogOut, Settings, UserCog } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
-import { logoutAction } from "@/lib/actions/auth.action";
+import { LogoutForm } from "@/components/layout/logout-form";
 import type { Role, SessionUser } from "@/types/user";
 
 /** Tujuan menu profil/pengaturan untuk tiap role. */
@@ -28,7 +28,10 @@ export function ProfileMenu({ user }: { user: SessionUser }) {
     if (!open) return;
 
     const closeOnOutside = (event: MouseEvent) => {
-      if (container.current && !container.current.contains(event.target as Node)) {
+      if (
+        container.current &&
+        !container.current.contains(event.target as Node)
+      ) {
         setOpen(false);
       }
     };
@@ -55,7 +58,9 @@ export function ProfileMenu({ user }: { user: SessionUser }) {
         className="flex items-center gap-2 rounded-control border border-line bg-white py-1 pl-1 pr-2.5 text-sm font-medium text-navy-900 transition hover:bg-canvas"
       >
         <Avatar name={user.name} size="sm" />
-        <span className="hidden max-w-28 truncate sm:block">{user.name.split(" ")[0]}</span>
+        <span className="hidden max-w-28 truncate sm:block">
+          {user.name.split(" ")[0]}
+        </span>
         <ChevronDown
           aria-hidden="true"
           className={`h-3.5 w-3.5 text-muted transition ${open ? "rotate-180" : ""}`}
@@ -69,7 +74,9 @@ export function ProfileMenu({ user }: { user: SessionUser }) {
           className="absolute right-0 top-full z-50 mt-2 w-52 overflow-hidden rounded-control border border-line bg-white shadow-card"
         >
           <div className="border-b border-line px-3 py-2.5">
-            <div className="truncate text-sm font-semibold text-navy-900">{user.name}</div>
+            <div className="truncate text-sm font-semibold text-navy-900">
+              {user.name}
+            </div>
             <div className="truncate text-xs text-muted">{user.email}</div>
           </div>
           <Link
@@ -86,9 +93,10 @@ export function ProfileMenu({ user }: { user: SessionUser }) {
             onClick={() => setOpen(false)}
             className="flex items-center gap-2 px-3 py-2 text-sm text-navy-800 transition hover:bg-canvas"
           >
-            <Settings className="h-4 w-4 text-muted" aria-hidden="true" /> Pengaturan
+            <Settings className="h-4 w-4 text-muted" aria-hidden="true" />{" "}
+            Pengaturan
           </Link>
-          <form action={logoutAction} onClick={() => setOpen(false)}>
+          <LogoutForm onComplete={() => setOpen(false)}>
             <button
               type="submit"
               role="menuitem"
@@ -96,7 +104,7 @@ export function ProfileMenu({ user }: { user: SessionUser }) {
             >
               <LogOut className="h-4 w-4" aria-hidden="true" /> Keluar
             </button>
-          </form>
+          </LogoutForm>
         </div>
       )}
     </div>

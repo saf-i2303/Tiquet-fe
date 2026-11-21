@@ -3,14 +3,14 @@ import type { Role, SessionUser } from "@/types/user";
 /**
  * PREVIEW MODE
  * ---------------------------------------------------------------
- * Saat aktif, seluruh guard (proxy + server layout + server action)
- * dilewati sehingga semua halaman bisa dibuka tanpa login.
+ * Saat aktif, guard klien dilewati sehingga semua halaman bisa dibuka tanpa login.
  * Dipakai hanya untuk preview tampilan.
  *
- * Matikan dengan menambahkan env:
- *   NEXT_PUBLIC_PREVIEW_MODE=false
+ * Aktifkan secara eksplisit dengan env:
+ *   NEXT_PUBLIC_PREVIEW_MODE=true
+ * Default-nya mati supaya guard tidak fail-open.
  */
-export const PREVIEW_MODE = process.env.NEXT_PUBLIC_PREVIEW_MODE !== "false";
+export const PREVIEW_MODE = process.env.NEXT_PUBLIC_PREVIEW_MODE === "true";
 
 export const DEMO_SESSIONS: Record<Role, SessionUser> = {
   customer: {

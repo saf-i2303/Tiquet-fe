@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
+import { AuthProvider } from "@/components/providers/auth-provider";
 import { siteConfig } from "@/config/site";
 import "./globals.css";
 
@@ -60,7 +61,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="id"
       className={`${headingFont.variable} ${bodyFont.variable}`}
     >
-      <body>{children}</body>
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }
