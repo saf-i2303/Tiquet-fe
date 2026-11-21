@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/providers/auth-provider";
 import { StatusBadge } from "@/components/shared/status-badge";
-import { updateOrganizerProfileAction } from "@/lib/actions/organizer.action";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -8,22 +11,89 @@ import { Field, Input, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SummaryRow } from "@/components/ui/summary-row";
 import { organizerStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import { formatDate } from "@/lib/utils";
-import { getOrganizer } from "@/services/organizer.service";
+import {
+  getOrganizer,
+  updateOrganizerProfile,
+} from "@/services/organizerServices";
+import type { Organizer } from "@/types/organizer";
 
-export const metadata: Metadata = {
-  title: "Profil Organizer",
-};
-
-export default async function OrganizerProfilePage({
+export default function OrganizerProfilePage({
   searchParams,
 }: {
   searchParams: Promise<{ saved?: string; error?: string }>;
 }) {
-  const session = await requireRole("organizer", "/organizer/profile");
-  const { saved, error } = await searchParams;
-  const organizer = await getOrganizer(session.organizerId ?? "org-001");
+  const { saved, error } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const [organizer, setOrganizer] = useState<Organizer | undefined>();
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [savedLocally, setSavedLocally] = useState(false);
+  const [requiredError, setRequiredError] = useState(false);
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    getOrganizer(organizerId)
+      .then((data) => {
+        if (active) setOrganizer(data);
+      })
+      .catch(() => {
+        if (active) setOrganizer(undefined);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading) return null;
+
+  async function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault();
+    const data = new FormData(formEvent.currentTarget);
+    const name = String(data.get("name") ?? "").trim();
+    const email = String(data.get("email") ?? "").trim();
+
+    if (!name || !email) {
+      setRequiredError(true);
+      window.alert("Nama dan email wajib diisi.");
+      return;
+    }
+
+    try {
+      await updateOrganizerProfile({
+        name,
+        description: String(data.get("description") ?? ""),
+        contact_email: email,
+        contact_phone: String(data.get("phone") ?? ""),
+      });
+      setRequiredError(false);
+      setSavedLocally(true);
+      setOrganizer((current) =>
+        current
+          ? {
+              ...current,
+              name,
+              email,
+              phone: String(data.get("phone") ?? ""),
+              description: String(data.get("description") ?? ""),
+            }
+          : current,
+      );
+      router.refresh();
+    } catch (submitError) {
+      window.alert(
+        submitError instanceof Error ? submitError.message : "Gagal menyimpan profil organizer.",
+      );
+    }
+  }
 
   if (!organizer) {
     return <Alert tone="danger">Data organizer tidak ditemukan.</Alert>;
@@ -37,12 +107,12 @@ export default async function OrganizerProfilePage({
         subtitle="Informasi ini tampil di halaman event dan membantu peserta mengenal EO kamu."
       />
 
-      {saved && (
+      {(saved || savedLocally) && (
         <Alert tone="success" className="mb-5">
           Profil organizer berhasil diperbarui.
         </Alert>
       )}
-      {error && (
+      {(error || requiredError) && (
         <Alert tone="danger" className="mb-5">
           Nama dan email wajib diisi.
         </Alert>
@@ -50,7 +120,7 @@ export default async function OrganizerProfilePage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="p-5">
-          <form action={updateOrganizerProfileAction} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Nama organizer" htmlFor="name">
                 <Input id="name" name="name" required defaultValue={organizer.name} />

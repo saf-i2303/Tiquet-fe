@@ -1,6 +1,10 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BadgeCheck, Mail, ScanLine, ShieldCheck, Users } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { InviteMemberForm } from "@/components/organizer/invite-member-form";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -12,15 +16,13 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { memberRoleLabel, memberStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import {
   getOrganizerEvents,
   getOrganizerMembers,
-} from "@/services/organizer.service";
-
-export const metadata: Metadata = {
-  title: "Tim & Petugas",
-};
+} from "@/services/organizerServices";
+import type { EventWithStats } from "@/types/event";
+import type { OrganizerMember } from "@/types/organizer";
 
 const permissions = [
   {
@@ -37,19 +39,57 @@ const permissions = [
   },
 ];
 
-export default async function OrganizerTeamPage({
+export default function OrganizerTeamPage({
   searchParams,
 }: {
   searchParams: Promise<{ invited?: string; error?: string }>;
 }) {
-  const session = await requireRole("organizer", "/organizer/team");
-  const { invited, error } = await searchParams;
-  const organizerId = session.organizerId ?? "org-001";
+  const { invited, error } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const [members, setMembers] = useState<OrganizerMember[]>([]);
+  const [events, setEvents] = useState<EventWithStats[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [invitedLocally, setInvitedLocally] = useState(false);
 
-  const [members, events] = await Promise.all([
-    getOrganizerMembers(organizerId),
-    getOrganizerEvents(organizerId),
-  ]);
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    Promise.all([
+      getOrganizerMembers(organizerId),
+      getOrganizerEvents(organizerId),
+    ])
+      .then(([memberList, eventList]) => {
+        if (!active) return;
+        setMembers(memberList);
+        setEvents(eventList);
+      })
+      .catch(() => {
+        if (!active) return;
+        setMembers([]);
+        setEvents([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading) return null;
+
+  function handleInvited() {
+    setInvitedLocally(true);
+    const organizerId = requireOrganizerId(user!);
+    getOrganizerMembers(organizerId)
+      .then((data) => setMembers(data))
+      .catch(() => undefined);
+    router.refresh();
+  }
 
   const eventTitle = (eventId: string) =>
     events.find((event) => event.id === eventId)?.title ?? eventId;
@@ -65,7 +105,7 @@ export default async function OrganizerTeamPage({
         subtitle="Kelola akses anggota tim dan tugaskan gate staff untuk proses check-in."
       />
 
-      {invited && (
+      {(invited || invitedLocally) && (
         <Alert tone="success" className="mb-5">
           Undangan berhasil dikirim.
         </Alert>
@@ -105,7 +145,7 @@ export default async function OrganizerTeamPage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="section-stack">
-          <InviteMemberForm />
+          <InviteMemberForm onInvited={handleInvited} />
 
           <Card className="overflow-hidden">
             <div className="p-5">

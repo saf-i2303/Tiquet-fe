@@ -1,6 +1,10 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+"use client";
+
+import { use, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Clock, Pencil, Ticket, TrendingUp } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
+import { requireOwnedEvent } from "@/lib/ownership";
 import { TicketTypeForm } from "@/components/organizer/ticket-type-form";
 import { Alert } from "@/components/ui/alert";
 import { BackLink } from "@/components/ui/back-link";
@@ -12,55 +16,85 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Price } from "@/components/ui/price";
 import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
-import { requireRole } from "@/lib/guards";
 import { formatDate, percent } from "@/lib/utils";
-import { getEventById } from "@/services/event.service";
+import { getEventById } from "@/services/eventServices";
+import type { EventWithStats } from "@/types/event";
 
-export const metadata: Metadata = {
-  title: "Kelola Tiket",
-};
-
-export default async function EventTicketsPage({
+export default function EventTicketsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ saved?: string; error?: string; ticketTypeId?: string }>;
 }) {
-  await requireRole("organizer", "/organizer/events");
-  const { id } = await params;
-  const { saved, error, ticketTypeId } = await searchParams;
+  const { id } = use(params);
+  const { saved, error, ticketTypeId } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const [event, setEvent] = useState<EventWithStats | null>(null);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [savedLocally, setSavedLocally] = useState(false);
 
-  const event = await getEventById(id, { includeUnpublished: true });
-  if (!event) notFound();
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+
+    getEventById(id, { includeUnpublished: true })
+      .then((data) => {
+        if (active) setEvent(data ?? null);
+      })
+      .catch(() => {
+        if (active) setEvent(null);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, isLoading, user]);
+
+  const ownedEvent = event && user ? requireOwnedEvent(event, user) : null;
+  if (isLoading || !user || isDataLoading || !ownedEvent) return null;
+
+  function handleSaved() {
+    setSavedLocally(true);
+    getEventById(id, { includeUnpublished: true })
+      .then((data) => {
+        if (data) setEvent(data);
+      })
+      .catch(() => undefined);
+    router.refresh();
+  }
 
   const editing = ticketTypeId
-    ? event.ticketTypes.find((ticket) => ticket.id === ticketTypeId)
+    ? ownedEvent.ticketTypes.find((ticket) => ticket.id === ticketTypeId)
     : undefined;
 
-  const totalQuota = event.ticketTypes.reduce((total, ticket) => total + ticket.quota, 0);
-  const totalSold = event.ticketTypes.reduce((total, ticket) => total + ticket.sold, 0);
-  const potential = event.ticketTypes.reduce(
+  const totalQuota = ownedEvent.ticketTypes.reduce((total, ticket) => total + ticket.quota, 0);
+  const totalSold = ownedEvent.ticketTypes.reduce((total, ticket) => total + ticket.sold, 0);
+  const potential = ownedEvent.ticketTypes.reduce(
     (total, ticket) => total + ticket.price * ticket.quota,
     0,
   );
-  const revenue = event.ticketTypes.reduce(
+  const revenue = ownedEvent.ticketTypes.reduce(
     (total, ticket) => total + ticket.price * ticket.sold,
     0,
   );
 
   return (
     <main>
-      <BackLink href={`/organizer/events/${event.id}`} label="Kembali ke detail event" />
+      <BackLink href={`/organizer/events/${ownedEvent.id}`} label="Kembali ke detail event" />
 
       <PageHeader
         kicker="Kategori tiket"
-        title={`Tiket · ${event.title}`}
+        title={`Tiket · ${ownedEvent.title}`}
         subtitle="Atur harga, kuota, periode penjualan, dan benefit tiap kategori."
         className="mt-4"
       />
 
-      {saved && (
+      {(saved || savedLocally) && (
         <Alert tone="success" className="mb-5">
           Kategori tiket berhasil disimpan.
         </Alert>
@@ -72,7 +106,7 @@ export default async function EventTicketsPage({
       )}
 
       <div className="stat-grid mb-6">
-        <StatTile label="Kategori" value={event.ticketTypes.length} hint="Jenis tiket aktif" />
+        <StatTile label="Kategori" value={ownedEvent.ticketTypes.length} hint="Jenis tiket aktif" />
         <StatTile
           label="Tiket terjual"
           value={totalSold.toLocaleString("id-ID")}
@@ -96,14 +130,14 @@ export default async function EventTicketsPage({
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <section className="space-y-4">
-          {event.ticketTypes.length === 0 && (
+          {ownedEvent.ticketTypes.length === 0 && (
             <EmptyState
               title="Belum ada kategori tiket"
               description="Gunakan form di samping untuk menambahkan kategori pertama."
             />
           )}
 
-          {event.ticketTypes.map((ticket) => (
+          {ownedEvent.ticketTypes.map((ticket) => (
             <Card key={ticket.id} className="p-5">
               <CardHeader
                 title={ticket.name}
@@ -135,7 +169,7 @@ export default async function EventTicketsPage({
                   <span>Kuota {ticket.quota.toLocaleString("id-ID")}</span>
                 </div>
                 <ButtonLink
-                  href={`/organizer/events/${event.id}/tickets?ticketTypeId=${ticket.id}`}
+                  href={`/organizer/events/${ownedEvent.id}/tickets?ticketTypeId=${ticket.id}`}
                   variant="outline"
                   size="sm"
                 >
@@ -157,10 +191,10 @@ export default async function EventTicketsPage({
         </section>
 
         <aside className="h-fit space-y-4">
-          <TicketTypeForm eventId={event.id} ticket={editing} />
+          <TicketTypeForm eventId={ownedEvent.id} ticket={editing} onSaved={handleSaved} />
           {editing && (
             <ButtonLink
-              href={`/organizer/events/${event.id}/tickets`}
+              href={`/organizer/events/${ownedEvent.id}/tickets`}
               variant="outline"
               size="sm"
               className="w-full"

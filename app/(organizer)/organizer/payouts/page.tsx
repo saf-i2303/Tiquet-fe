@@ -1,5 +1,8 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import { Banknote, Clock, Landmark, Wallet } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { PayoutRequestForm } from "@/components/organizer/payout-request-form";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -11,30 +14,51 @@ import { StatTile } from "@/components/ui/stat-tile";
 import { SummaryRow } from "@/components/ui/summary-row";
 import { TableShell } from "@/components/ui/table-shell";
 import { payoutStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import { formatDate } from "@/lib/utils";
 import {
   getOrganizer,
   getOrganizerPayouts,
-} from "@/services/organizer.service";
+} from "@/services/organizerServices";
+import type { Organizer, OrganizerPayout } from "@/types/organizer";
 
-export const metadata: Metadata = {
-  title: "Pencairan Dana",
-};
-
-export default async function OrganizerPayoutsPage({
+export default function OrganizerPayoutsPage({
   searchParams,
 }: {
   searchParams: Promise<{ requested?: string; error?: string }>;
 }) {
-  const session = await requireRole("organizer", "/organizer/payouts");
-  const { requested, error } = await searchParams;
-  const organizerId = session.organizerId ?? "org-001";
+  const { requested, error } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const [organizer, setOrganizer] = useState<Organizer | undefined>();
+  const [payouts, setPayouts] = useState<OrganizerPayout[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
 
-  const [organizer, payouts] = await Promise.all([
-    getOrganizer(organizerId),
-    getOrganizerPayouts(organizerId),
-  ]);
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    Promise.all([getOrganizer(organizerId), getOrganizerPayouts(organizerId)])
+      .then(([profile, payoutList]) => {
+        if (!active) return;
+        setOrganizer(profile);
+        setPayouts(payoutList);
+      })
+      .catch(() => {
+        if (!active) return;
+        setOrganizer(undefined);
+        setPayouts([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading) return null;
 
   if (!organizer) {
     return <Alert tone="danger">Data organizer tidak ditemukan.</Alert>;

@@ -1,31 +1,69 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import { notFound } from "next/navigation";
 import { Check, X } from "lucide-react";
 import { RefundStatusBadge } from "@/components/admin/refund-status-badge";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DetailHeader } from "@/components/ui/detail-header";
 import { Price } from "@/components/ui/price";
 import { SummaryRow } from "@/components/ui/summary-row";
 import { routes } from "@/config/routes";
-import { updateRefundStatusAction } from "@/lib/actions/refund.action";
-import { requireRole } from "@/lib/guards";
 import { formatDateTime } from "@/lib/utils";
 import { getRefundById } from "@/services/refund.service";
 
-export const metadata: Metadata = {
-  title: "Detail Refund",
-};
-
 /** Stub halaman detail refund — dipakai Super Admin untuk memutuskan pengajuan. */
-export default async function AdminRefundDetailPage({
+export default function AdminRefundDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("super_admin", "/admin/refunds");
-  const { id } = await params;
-  const refund = await getRefundById(id);
+  const { id } = use(params);
+  const [refund, setRefund] = useState<Awaited<ReturnType<typeof getRefundById>>>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getRefundById(id)
+      .then((data) => {
+        if (!active) return;
+        setRefund(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setRefund(undefined);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+  if (errorMsg) {
+    return (
+      <main>
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      </main>
+    );
+  }
   if (!refund) notFound();
 
   return (
@@ -39,14 +77,24 @@ export default async function AdminRefundDetailPage({
         actions={
           refund.status === "requested" || refund.status === "approved" ? (
             <div className="flex flex-wrap gap-2">
-              <form action={updateRefundStatusAction}>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  alert("Fitur belum tersedia");
+                }}
+              >
                 <input type="hidden" name="refundId" value={refund.id} />
                 <input type="hidden" name="status" value="refunded" />
                 <Button size="sm">
                   <Check className="h-3.5 w-3.5" /> Setujui &amp; cairkan
                 </Button>
               </form>
-              <form action={updateRefundStatusAction}>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  alert("Fitur belum tersedia");
+                }}
+              >
                 <input type="hidden" name="refundId" value={refund.id} />
                 <input type="hidden" name="status" value="rejected" />
                 <Button variant="outline" size="sm">

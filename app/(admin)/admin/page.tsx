@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
 import {
   Activity,
   ArrowRight,
@@ -13,6 +15,7 @@ import {
 } from "lucide-react";
 import { QuickLinksCard } from "@/components/shared/quick-links-card";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Alert } from "@/components/ui/alert";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -25,7 +28,6 @@ import {
   orderStatusMeta,
   organizerStatusMeta,
 } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDate, formatDateTime, formatRupiah } from "@/lib/utils";
 import {
   getAuditLogs,
@@ -33,22 +35,57 @@ import {
   getAllOrders,
   getPendingOrganizers,
   getPlatformStats,
-} from "@/services/admin.service";
+} from "@/services/adminServices";
 
-export const metadata: Metadata = {
-  title: "Super Admin Dashboard",
+const emptyStats = {
+  totalUsers: 0,
+  totalOrganizers: 0,
+  pendingOrganizers: 0,
+  publishedEvents: 0,
+  pendingEvents: 0,
+  grossRevenue: 0,
+  ticketsSold: 0,
+  transactions: 0,
 };
 
-export default async function AdminDashboardPage() {
-  await requireRole("super_admin", "/admin");
+export default function AdminDashboardPage() {
+  const [stats, setStats] = useState(emptyStats);
+  const [pendingOrganizers, setPendingOrganizers] = useState<Awaited<ReturnType<typeof getPendingOrganizers>>>([]);
+  const [allEvents, setAllEvents] = useState<Awaited<ReturnType<typeof getAllEvents>>>([]);
+  const [orders, setOrders] = useState<Awaited<ReturnType<typeof getAllOrders>>>([]);
+  const [logs, setLogs] = useState<Awaited<ReturnType<typeof getAuditLogs>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const [stats, pendingOrganizers, allEvents, orders, logs] = await Promise.all([
-    getPlatformStats(),
-    getPendingOrganizers(),
-    getAllEvents(),
-    getAllOrders(),
-    getAuditLogs(),
-  ]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      getPlatformStats(),
+      getPendingOrganizers(),
+      getAllEvents(),
+      getAllOrders(),
+      getAuditLogs(),
+    ])
+      .then(([nextStats, nextPending, nextEvents, nextOrders, nextLogs]) => {
+        if (!active) return;
+        setStats(nextStats);
+        setPendingOrganizers(nextPending);
+        setAllEvents(nextEvents);
+        setOrders(nextOrders);
+        setLogs(nextLogs);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const pendingEventList = allEvents
     .filter((event) => event.status === "pending")
@@ -56,6 +93,17 @@ export default async function AdminDashboardPage() {
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Control center"
         title="Dashboard super admin"
@@ -264,7 +312,7 @@ export default async function AdminDashboardPage() {
             <ol className="mt-3 space-y-3">
               {logs.slice(0, 5).map((log) => (
                 <li key={log.id} className="border-l-2 border-line pl-3">
-                  <div className="text-sm font-semibold text-navy-900">{log.action}</div>
+                  <div className="text-sm font-semibold text-navy-900">{log["action"]}</div>
                   <div className="text-xs text-muted">{log.target}</div>
                   <div className="mt-0.5 text-xs text-muted">
                     {log.actor} · {formatDateTime(log.at)}

@@ -1,10 +1,13 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import { Check, Ticket, TrendingUp, Users, X } from "lucide-react";
 import { CategoryIcon } from "@/components/event/category-icon";
 import { EventMeta } from "@/components/shared/event-meta";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -13,25 +16,89 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Price } from "@/components/ui/price";
 import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
-import { moderateEventAction } from "@/lib/actions/admin.action";
 import { categoryMeta, eventStatusMeta, orderStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { getApiErrorMessage } from "@/lib/api";
 import { formatRupiah } from "@/lib/utils";
-import { getAllEvents, getAllOrders } from "@/services/admin.service";
+import {
+  approveEvent,
+  getAllEvents,
+  getAllOrders,
+  rejectEvent,
+} from "@/services/adminServices";
 
-export const metadata: Metadata = {
-  title: "Review Event",
-};
-
-export default async function AdminEventDetailPage({
+export default function AdminEventDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("super_admin", "/admin/events");
-  const { id } = await params;
+  const { id } = use(params);
+  const router = useRouter();
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof getAllEvents>>>([]);
+  const [orders, setOrders] = useState<Awaited<ReturnType<typeof getAllOrders>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const [events, orders] = await Promise.all([getAllEvents(), getAllOrders()]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([getAllEvents(), getAllOrders()])
+      .then(([nextEvents, nextOrders]) => {
+        if (!active) return;
+        setEvents(nextEvents);
+        setOrders(nextOrders);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setEvents([]);
+        setOrders([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleDecision(decision: "published" | "rejected") {
+    setErrorMsg("");
+    try {
+      if (decision === "published") {
+        await approveEvent(id);
+      } else {
+        const reason = window.prompt("Alasan penolakan event:");
+        if (reason === null || !reason.trim()) return;
+        await rejectEvent(id, reason.trim());
+      }
+      setEvents((current) =>
+        current.map((item) => (item.id === id ? { ...item, status: decision } : item)),
+      );
+      router.refresh();
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Gagal menyimpan keputusan moderasi."));
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+  if (errorMsg) {
+    return (
+      <main>
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      </main>
+    );
+  }
+
   const event = events.find((item) => item.id === id);
   if (!event) notFound();
 
@@ -75,22 +142,23 @@ export default async function AdminEventDetailPage({
         actions={
           <>
             {event.status !== "published" && (
-              <form action={moderateEventAction}>
-                <input type="hidden" name="eventId" value={event.id} />
-                <input type="hidden" name="decision" value="published" />
-                <Button size="sm">
-                  <Check className="h-3.5 w-3.5" /> Setujui &amp; tayangkan
-                </Button>
-              </form>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => handleDecision("published")}
+              >
+                <Check className="h-3.5 w-3.5" /> Setujui &amp; tayangkan
+              </Button>
             )}
             {event.status !== "rejected" && (
-              <form action={moderateEventAction}>
-                <input type="hidden" name="eventId" value={event.id} />
-                <input type="hidden" name="decision" value="rejected" />
-                <Button variant="danger" size="sm">
-                  <X className="h-3.5 w-3.5" /> Tolak event
-                </Button>
-              </form>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={() => handleDecision("rejected")}
+              >
+                <X className="h-3.5 w-3.5" /> Tolak event
+              </Button>
             )}
           </>
         }

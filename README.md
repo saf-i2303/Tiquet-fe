@@ -51,19 +51,24 @@ cp .env.example .env.local
 Jika `.env.example` belum tersedia, buat `.env.local` manual dengan isi berikut:
 
 ```env
-# Alamat API backend (tanpa trailing slash)
+# Origin backend untuk fetch sisi server (server-only, tidak dikirim ke browser)
+API_UPSTREAM_URL=http://localhost:8080
+
+# Base URL yang dipakai browser. URL absolut = direct call via CORS.
+# Relatif ("/api/v1") = fallback lewat rewrite Next.js.
 NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
 
-# true  = pakai data mock lokal (default)
+# true  = pakai data mock lokal
 # false = panggil backend sungguhan
-NEXT_PUBLIC_USE_MOCK=true
+NEXT_PUBLIC_USE_MOCK=false
 ```
 
 ### Catatan penting
 
-- `NEXT_PUBLIC_USE_MOCK` defaultnya `true` bila tidak diset (lihat `lib/api.ts`).
+- Browser memanggil `NEXT_PUBLIC_API_URL` langsung. Karena beda origin (`localhost:3000` → `localhost:8080`), daftarkan origin frontend di `CORS_ALLOWED_ORIGINS` backend.
+- Nilai `NEXT_PUBLIC_API_URL` boleh origin saja atau sudah termasuk `/api/v1`; trailing slash dibuang otomatis oleh `lib/api.ts`.
+- Jika dikosongkan, `lib/api.ts` memakai fallback `/api/v1` dan `next.config.ts` meneruskannya ke `API_UPSTREAM_URL` (mode proxy).
 - Variabel berprefix `NEXT_PUBLIC_` **di-inline ke JavaScript bundle** saat build dan dapat dibaca browser. Jangan pernah menyimpan JWT secret, password database, atau kredensial privat di sini.
-- Saat `NEXT_PUBLIC_USE_MOCK=false`, `NEXT_PUBLIC_API_URL` wajib diisi. Jika kosong, `apiFetch` melempar error `NEXT_PUBLIC_API_URL belum dikonfigurasi.`
 - Setelah mengubah file environment, **restart dev server**. Nilai `NEXT_PUBLIC_*` dibekukan saat `next build`.
 - Jika ingin meng-commit `.env.example`, gunakan `git add -f .env.example` atau sesuaikan pola `.gitignore`, karena `.env*` saat ini diabaikan.
 
@@ -101,14 +106,22 @@ npm run start
 ### 5. Terhubung ke backend sungguhan
 
 1. Pastikan backend `Tiquet-be` dan PostgreSQL sudah berjalan (lihat README backend; default API port `8080`, prefix `/api/v1`).
-2. Set `.env.local`:
+2. Pastikan backend mengizinkan origin frontend:
 
 ```env
+# .env backend Tiquet-be
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+```
+
+3. Set `.env.local`:
+
+```env
+API_UPSTREAM_URL=http://localhost:8080
 NEXT_PUBLIC_API_URL=http://localhost:8080/api/v1
 NEXT_PUBLIC_USE_MOCK=false
 ```
 
-3. Restart dev server.
+4. Restart dev server.
 
 ---
 
@@ -116,27 +129,34 @@ NEXT_PUBLIC_USE_MOCK=false
 
 | Mode | `NEXT_PUBLIC_USE_MOCK` | Sumber data | Kapan dipakai |
 |---|---|---|---|
-| Mock (default) | `true` atau tidak diset | `lib/mocks/*.ts` | Pengembangan UI tanpa backend |
-| Integrasi API | `false` | Backend `Tiquet-be` | Integrasi, UAT, production |
+| Integrasi API (default) | `false` atau tidak diset | Backend `Tiquet-be` | Integrasi, UAT, production |
+| Mock | `true` | `lib/mocks/*.ts` | Pengembangan UI tanpa backend |
 
-Service yang saat ini sudah memiliki jalur API aktif:
+Seluruh endpoint backend yang tersedia saat ini (`/api/v1`) sudah memiliki method di
+`services/<domain>Services.ts`. Lihat detail pola dan aturan keamanan di
+[`docs/POLA-FETCH-DAN-KEAMANAN.md`](docs/POLA-FETCH-DAN-KEAMANAN.md).
 
-| Service | Path yang dipanggil |
+| Service | Domain endpoint |
 |---|---|
-| `services/event.service.ts` | `GET /events`, `GET /events/featured`, `GET /events/:id`, `PATCH /events/:id/status` |
-| `services/order.service.ts` | `GET /orders?customerId=`, `GET /orders/:id` |
-| `services/ticket.service.ts` | `GET /tickets?customerId=` |
-| `services/payment.service.ts` | `GET /payments/methods` |
+| `services/authServices.ts` | `/auth/register`, `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/me` |
+| `services/healthServices.ts` | `/health` |
+| `services/eventServices.ts` | `/event-categories`, `/events`, `/organizer/events/*` |
+| `services/venueServices.ts` | `/organizer/venues*` |
+| `services/ticketServices.ts` | `/events/:id/tickets`, `/organizer/events/:event_id/tickets*`, `/admin/events/:event_id/tickets` |
+| `services/organizerServices.ts` | `/organizer/profile`, `/organizer/documents`, `/organizer/staff`, `/organizer/submit-verification` |
+| `services/adminServices.ts` | `/admin/organizers/*`, `/admin/events/*` |
 
-Service lain (`auth`, `organizer`, `admin`, `checkin`, `refund`) masih memakai data mock lokal. Beberapa path di atas juga masih bersifat **placeholder** dan perlu diselaraskan dengan kontrak final backend saat integrasi, misalnya `PATCH /events/:id/status` versus `POST /admin/events/:id/approve|reject`.
+Layanan `order`, `payment`, `refund`, dan `checkin` masih memakai data mock lokal karena
+backend belum menyediakan endpoint terkait.
 
-Seluruh request melalui `apiFetch` di `lib/api.ts`, yang secara otomatis:
+Seluruh request melalui `api.*` di `lib/api.ts` (fetch bawaan Next.js), yang secara otomatis:
 
-- menggabungkan `NEXT_PUBLIC_API_URL` dengan path,
-- mengirim header `Accept: application/json` dan `Content-Type: application/json`,
-- menambahkan `Authorization: Bearer <token>` saat token diberikan,
+- memakai `NEXT_PUBLIC_API_URL` (absolut/CORS) di browser dan `API_UPSTREAM_URL` di server, lalu menggabungkannya dengan path,
+- mengirim header `Accept: application/json` dan `Content-Type: application/json` (kecuali `FormData`) yang sudah termasuk `AllowHeaders` backend,
+- membaca token dari `localStorage` dan menambahkan `Authorization: Bearer <token>`; request memakai `credentials: "omit"` karena backend tidak memakai cookie,
+- menghapus token dan mengarahkan ke `/login` saat menerima `401`,
 - memakai `cache: "no-store"`,
-- mengubah response gagal menjadi `ApiError` (`status` + `payload`).
+- mengubah response gagal menjadi `ApiError` dengan pesan dari `data.message` (`status` + `payload`), termasuk kegagalan network/CORS (`status: 0`).
 
 ---
 
@@ -168,20 +188,17 @@ tiquet-frontend/
 │   └── site.ts             # Nama, tagline, kontak situs
 ├── hooks/                  # Client hook (mis. use-countdown)
 ├── lib/
-│   ├── actions/            # Server actions (mutasi)
 │   ├── mocks/              # Data dummy untuk mode mock
-│   ├── api.ts              # Fetch wrapper ke backend
-│   ├── auth.ts             # get/set/clear session
+│   ├── api.ts              # Satu-satunya wrapper fetch + token (localStorage) + handler 401
 │   ├── constants.ts        # Metadata status, kategori, batas bisnis
-│   ├── guards.ts           # Guard akses berbasis role
-│   ├── session.ts          # Encode/decode cookie session
 │   └── utils.ts            # Helper (cn, formatter)
-├── services/               # Satu service per modul bisnis
+├── services/               # Service per modul, semuanya dipanggil dari client
+│   ├── *Services.ts        # Query/mutasi data per domain (memanggil lib/api.ts)
+│   └── *.service.ts        # Service mock untuk domain yang belum punya endpoint backend
 ├── tests/
 │   ├── e2e/                # Playwright (disiapkan)
 │   └── unit/               # Vitest (disiapkan)
 ├── types/                  # Kontrak tipe TypeScript
-├── proxy.ts                # Network boundary (menggantikan middleware.ts)
 ├── next.config.ts
 ├── postcss.config.mjs      # Tailwind CSS v4 via PostCSS
 ├── components.json         # Konfigurasi komponen UI
@@ -235,7 +252,6 @@ Membutuhkan peran `organizer`.
 | `/organizer/events/:id/edit` | Ubah event |
 | `/organizer/events/:id/tickets` | Kelola tipe tiket |
 | `/organizer/events/:id/attendees` | Daftar peserta |
-| `/organizer/events/:id/attendees/export` | Route handler export CSV |
 | `/organizer/reports` | Laporan |
 | `/organizer/transactions` | Transaksi |
 | `/organizer/team` | Anggota tim & staff |
@@ -284,29 +300,16 @@ Detail kontrak, aturan status, dan validasi ada di `README.md` repository `Tique
 
 ## Autentikasi & Session
 
-1. Form di `components/forms/` memanggil server action di `lib/actions/auth.action.ts`.
-2. Setelah berhasil, `setSession(user)` dari `lib/auth.ts` dipanggil.
-3. Data session disimpan dalam cookie **`tiketku_session`** (`lib/session.ts`) berupa base64url dari payload user.
-4. Cookie memakai:
-
-   - `httpOnly: true`
-   - `sameSite: "lax"`
-   - `secure: true` saat production
-   - `maxAge` 30 hari bila opsi *remember* dipilih
-
-5. `getSession()` dipakai server component/server action untuk membaca user aktif dan perannya.
-6. `lib/guards.ts` berisi pembatasan akses berbasis role di sisi UI.
-7. Role yang dikenal: `customer`, `organizer`, `gate_staff`, `super_admin`.
+1. Form di `components/forms/` memanggil `loginRequest` / `registerRequest` dari `services/authServices.ts` langsung di `handleSubmit`.
+2. Setelah berhasil, `saveTokensToStorage()` (`lib/api.ts`) menyimpan access token & refresh token ke `localStorage`.
+3. Data user disimpan ke `localStorage` lewat `useAuth().setUser()` (atau `saveUserToStorage()`) agar tidak perlu memanggil `/auth/me` tiap halaman.
+4. `AuthProvider` (`components/providers/auth-provider.tsx`) adalah satu-satunya sumber data user di klien.
+5. `ClientAuthGuard` (`components/auth/client-auth-guard.tsx`) membatasi akses dashboard berdasarkan token & role di klien.
+6. Role yang dikenal: `customer`, `organizer`, `gate_staff`, `super_admin`.
 
 ### Perhatian keamanan
 
-`proxy.ts` saat ini hanya meneruskan request (`NextResponse.next()`) untuk path:
-
-```text
-/tickets, /orders, /profile, /checkout, /organizer, /admin
-```
-
-File ini **belum** melakukan pengecekan login maupun role. Otorisasi akhir tetap wajib diterapkan di backend pada setiap endpoint. Session frontend hanya untuk pengalaman pengguna (menyembunyikan menu, redirect, dll.), bukan sebagai perlindungan data.
+Tidak ada cookie sesi frontend. Otorisasi akhir wajib diterapkan di backend pada setiap endpoint. Data di `localStorage` hanya untuk pengalaman pengguna (menyembunyikan menu, redirect, dll.), bukan sebagai perlindungan data.
 
 ---
 
@@ -319,10 +322,9 @@ File ini **belum** melakukan pengecekan login maupun role. Otorisasi akhir tetap
    - `app/**/page.tsx` — routing dan komposisi halaman (server component).
    - `components/ui` — primitive UI (button, card, input, badge, dll.).
    - `components/forms`, `components/layout`, `components/event`, dll. — komponen per domain.
-   - `lib/actions/*.action.ts` — server action untuk mutasi data.
-   - `services/*.service.ts` — satu file per modul bisnis; memilih data mock atau `apiFetch`.
-   - `lib/api.ts` — satu-satunya tempat melakukan `fetch` ke backend.
-   - `lib/guards.ts`, `lib/auth.ts`, `lib/session.ts` — autentikasi & otorisasi sisi frontend.
+   - `services/*Services.ts` — satu file per domain backend; memilih dan memanggil method `api.*` untuk query sekaligus mutasi.
+   - `lib/api.ts` — satu-satunya tempat melakukan `fetch` ke backend (fetch bawaan Next.js).
+   - `components/providers/auth-provider.tsx`, `components/auth/client-auth-guard.tsx` — data user & pembatasan akses sisi klien.
    - `lib/constants.ts` — metadata status, kategori, filter, dan batas bisnis.
    - `lib/mocks/*.ts` — data dummy untuk mode mock.
    - `config/*` — konstanta aplikasi (`routes`, `navigation`, `site`).
@@ -331,12 +333,12 @@ File ini **belum** melakukan pengecekan login maupun role. Otorisasi akhir tetap
 
 3. **Aturan**
 
-   - Dilarang memanggil `fetch` langsung dari komponen. Selalu lewat `services/*` → `apiFetch`.
+   - Dilarang memanggil `fetch` langsung dari komponen maupun duplikat `BASE_URL` di service. Selalu lewat `lib/api.ts` → `services/<domain>Services.ts` → page/component.
    - Gunakan metadata status di `lib/constants.ts` (`orderStatusMeta`, `eventStatusMeta`, `organizerStatusMeta`, `refundStatusMeta`, dll.). Jangan hardcode label atau warna.
    - Uang disimpan sebagai **integer Rupiah tanpa desimal**. Konstanta terkait: `SERVICE_FEE = 15_000`, `MAX_TICKETS_PER_ORDER = 6`.
    - Waktu mengikuti format backend (UTC / ISO 8601).
    - Semua URL dibangun dari `config/routes.ts`.
-   - Gunakan session/cookie HttpOnly untuk data sesi; jangan menyimpan token akses di `localStorage`.
+   - Token akses dan refresh untuk request backend disimpan di `localStorage` melalui helper di `lib/api.ts`; cookie HttpOnly tetap dipakai untuk session UI. Ikuti aturan lengkap di `docs/POLA-FETCH-DAN-KEAMANAN.md`.
    - Ikuti dokumentasi Next.js 16 di `node_modules/next/dist/docs/` sebelum menulis API atau struktur baru, karena beberapa konvensi berubah dari versi sebelumnya.
 
 ---
@@ -389,7 +391,7 @@ chore: perbarui dependency dan config project
 
 | Gejala | Penyebab | Solusi |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL belum dikonfigurasi.` | Mode API aktif tetapi env kosong | Isi `NEXT_PUBLIC_API_URL`, lalu restart dev server |
+| `Failed to fetch` / error CORS di browser | Origin frontend belum diizinkan backend atau `NEXT_PUBLIC_API_URL` salah | Tambahkan origin ke `CORS_ALLOWED_ORIGINS` backend, pastikan `NEXT_PUBLIC_API_URL` absolut, lalu restart dev server |
 | Data tidak berubah saat development | Mode mock memakai array statis di `lib/mocks/` | Set `NEXT_PUBLIC_USE_MOCK=false` untuk memakai backend |
 | Env sudah diubah tapi tidak berlaku | `NEXT_PUBLIC_*` dibekukan saat build | Restart dev server atau build ulang |
 | Error/404 setelah integrasi API | Path service belum sesuai kontrak backend | Samakan path di `services/*.service.ts` dengan endpoint `Tiquet-be` |

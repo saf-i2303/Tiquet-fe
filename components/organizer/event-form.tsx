@@ -1,15 +1,69 @@
+"use client";
+
+import type { FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Save } from "lucide-react";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { categoryMeta, cities } from "@/lib/constants";
-import { saveEventAction } from "@/lib/actions/organizer.action";
+import { getUserFromStorage } from "@/lib/api";
+import { requireOrganizerId } from "@/lib/ownership";
+import { saveEvent } from "@/services/eventServices";
 import { toDateTimeInput } from "@/lib/utils";
-import type { EventWithStats } from "@/types/event";
+import type { Event, EventWithStats } from "@/types/event";
 
-export function EventForm({ event }: { event?: EventWithStats }) {
+export function EventForm({
+  event,
+  onSaved,
+}: {
+  event?: EventWithStats;
+  onSaved?: () => void;
+}) {
+  const router = useRouter();
+
+  async function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault();
+    const data = new FormData(formEvent.currentTarget);
+    const title = String(data.get("title") ?? "").trim();
+    const venue = String(data.get("venue") ?? "").trim();
+    const date = String(data.get("date") ?? "").trim();
+
+    if (!title || !venue || !date) {
+      window.alert("Nama event, venue, dan tanggal wajib diisi.");
+      return;
+    }
+
+    const user = getUserFromStorage();
+    if (!user) {
+      window.alert("Sesi berakhir. Silakan masuk kembali.");
+      return;
+    }
+
+    try {
+      await saveEvent({
+        id: event?.id,
+        organizerId: requireOrganizerId(user),
+        organizerName: user.name,
+        title,
+        category: String(data.get("category") ?? "music") as Event["category"],
+        city: String(data.get("city") ?? "Jakarta"),
+        venue,
+        address: String(data.get("address") ?? ""),
+        date,
+        endDate: String(data.get("endDate") ?? "") || undefined,
+        description: String(data.get("description") ?? ""),
+        status: String(data.get("status") ?? "draft") as Event["status"],
+      });
+      onSaved?.();
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal menyimpan event.");
+    }
+  }
+
   return (
-    <form action={saveEventAction} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
       {event && <input type="hidden" name="id" value={event.id} />}
 
       <Card className="space-y-5 p-5 sm:p-6">

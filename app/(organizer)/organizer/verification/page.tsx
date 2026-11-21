@@ -1,10 +1,17 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { BadgeCheck, FileText, ShieldCheck, Upload } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { StatusBadge } from "@/components/shared/status-badge";
 import {
-  submitVerificationAction,
-  uploadDocumentAction,
-} from "@/lib/actions/organizer.action";
+  addOrganizerDocument,
+  getOrganizer,
+  listOrganizerDocuments,
+  submitVerification,
+  type OrganizerDocumentRecord,
+} from "@/services/organizerServices";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -12,24 +19,117 @@ import { Field, Input, Select } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { documentStatusMeta, organizerStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import { formatDate } from "@/lib/utils";
-import { getOrganizer } from "@/services/organizer.service";
+import type { Organizer } from "@/types/organizer";
 
-export const metadata: Metadata = {
-  title: "Verifikasi Organizer",
+const docTypeByLabel: Record<string, OrganizerDocumentRecord["doc_type"]> = {
+  "Akta Perusahaan": "akta",
+  NPWP: "npwp",
+  "KTP Owner": "ktp",
+  "Izin Usaha": "nib",
+  "Dokumen pendukung": "other",
 };
 
-export default async function OrganizerVerificationPage({
+export default function OrganizerVerificationPage({
   searchParams,
 }: {
   searchParams: Promise<{ submitted?: string; uploaded?: string; error?: string }>;
 }) {
-  const session = await requireRole("organizer", "/organizer/verification");
-  const { submitted, uploaded, error } = await searchParams;
-  const organizer = await getOrganizer(session.organizerId ?? "org-001");
+  const { submitted, uploaded, error } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+  const [organizer, setOrganizer] = useState<Organizer | undefined>();
+  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [submittedLocally, setSubmittedLocally] = useState(false);
+  const [uploadedLocally, setUploadedLocally] = useState(false);
+  const [localError, setLocalError] = useState("");
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    getOrganizer(organizerId)
+      .then((data) => {
+        if (active) setOrganizer(data);
+      })
+      .catch(() => {
+        if (active) setOrganizer(undefined);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading) return null;
+
+  function refetchOrganizer() {
+    const organizerId = requireOrganizerId(user!);
+    getOrganizer(organizerId)
+      .then((data) => {
+        if (data) setOrganizer(data);
+      })
+      .catch(() => undefined);
+    router.refresh();
+  }
+
+  async function handleUpload(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault();
+    const data = new FormData(formEvent.currentTarget);
+    const file = data.get("file");
+    const label = String(data.get("type") ?? "Akta Perusahaan");
+
+    if (!(file instanceof File) || !file.name) {
+      setLocalError("file");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setLocalError("size");
+      return;
+    }
+
+    try {
+      await addOrganizerDocument({
+        doc_type: docTypeByLabel[label] ?? "other",
+        file_name: file.name,
+      });
+      setLocalError("");
+      setUploadedLocally(true);
+      refetchOrganizer();
+    } catch (uploadError) {
+      window.alert(
+        uploadError instanceof Error ? uploadError.message : "Gagal mengunggah dokumen.",
+      );
+    }
+  }
+
+  async function handleSubmitVerification(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault();
+    try {
+      const documents = await listOrganizerDocuments().catch(() => []);
+      if (documents.length === 0) {
+        setLocalError("documents");
+        return;
+      }
+      await submitVerification();
+      setLocalError("");
+      setSubmittedLocally(true);
+      refetchOrganizer();
+    } catch (submitError) {
+      window.alert(
+        submitError instanceof Error ? submitError.message : "Gagal mengajukan verifikasi.",
+      );
+    }
+  }
 
   if (!organizer) return <Alert tone="danger">Data organizer tidak ditemukan.</Alert>;
+
+  const activeError = localError || error;
 
   return (
     <main>
@@ -39,32 +139,32 @@ export default async function OrganizerVerificationPage({
         subtitle="Lengkapi dokumen agar event kamu bisa lolos moderasi dan tayang di marketplace."
       />
 
-      {submitted && (
+      {(submitted || submittedLocally) && (
         <Alert tone="success" className="mb-5">
           Pengajuan verifikasi berhasil dikirim. Tim kami meninjau maksimal 2 hari kerja.
         </Alert>
       )}
-      {uploaded && (
+      {(uploaded || uploadedLocally) && (
         <Alert tone="success" className="mb-5">
           Dokumen berhasil diunggah dan menunggu peninjauan admin.
         </Alert>
       )}
-      {error === "file" && (
+      {activeError === "file" && (
         <Alert tone="danger" className="mb-5">
           Pilih file dokumen yang ingin diunggah terlebih dahulu.
         </Alert>
       )}
-      {error === "size" && (
+      {activeError === "size" && (
         <Alert tone="danger" className="mb-5">
           Ukuran file melebihi 5 MB. Kompres dokumen lalu coba lagi.
         </Alert>
       )}
-      {error === "documents" && (
+      {activeError === "documents" && (
         <Alert tone="danger" className="mb-5">
           Unggah minimal satu dokumen sebelum mengajukan verifikasi.
         </Alert>
       )}
-      {error === "not-found" && (
+      {activeError === "not-found" && (
         <Alert tone="danger" className="mb-5">
           Data organizer tidak ditemukan.
         </Alert>
@@ -100,7 +200,7 @@ export default async function OrganizerVerificationPage({
           </div>
 
           <form
-            action={uploadDocumentAction}
+            onSubmit={handleUpload}
             className="mt-5 rounded-control border border-dashed border-line bg-surface p-4"
           >
             <SectionHeading
@@ -166,7 +266,7 @@ export default async function OrganizerVerificationPage({
           </Card>
 
           <Card className="p-5">
-            <form action={submitVerificationAction}>
+            <form onSubmit={handleSubmitVerification}>
               <CardHeader title="Ajukan verifikasi" />
               <p className="mt-1 text-sm text-muted">
                 Pastikan semua dokumen sudah benar. Pengajuan akan ditinjau oleh super admin.

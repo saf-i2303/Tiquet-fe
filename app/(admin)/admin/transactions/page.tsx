@@ -1,7 +1,10 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { Receipt, Ticket, TrendingUp, Wallet } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Alert } from "@/components/ui/alert";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterBar } from "@/components/ui/filter-bar";
@@ -10,13 +13,8 @@ import { Price } from "@/components/ui/price";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { orderStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDateTime, formatRupiah } from "@/lib/utils";
-import { getAllOrders } from "@/services/admin.service";
-
-export const metadata: Metadata = {
-  title: "Transaksi Platform",
-};
+import { getAllOrders } from "@/services/adminServices";
 
 const statusFilters = [
   { value: "", label: "Semua" },
@@ -26,14 +24,36 @@ const statusFilters = [
   { value: "cancelled", label: "Dibatalkan" },
 ];
 
-export default async function AdminTransactionsPage({
+export default function AdminTransactionsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-  await requireRole("super_admin", "/admin/transactions");
-  const { status = "", q = "" } = await searchParams;
-  const orders = await getAllOrders();
+  const { status = "", q = "" } = use(searchParams);
+  const [orders, setOrders] = useState<Awaited<ReturnType<typeof getAllOrders>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getAllOrders()
+      .then((data) => {
+        if (!active) return;
+        setOrders(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setOrders([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const needle = q.trim().toLowerCase();
   const filtered = orders.filter((order) => {
@@ -57,6 +77,17 @@ export default async function AdminTransactionsPage({
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Keuangan platform"
         title="Transaksi"
