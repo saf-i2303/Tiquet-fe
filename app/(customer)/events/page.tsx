@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { categoryMeta } from "@/lib/constants";
-import { getEventCities, getEvents, getEventsGroupedByCategory } from "@/services/event.service";
+import { getEventCities, getEvents, getEventsGroupedByCategory } from "@/services/eventServices";
 import type { EventQuery } from "@/types/event";
 
 export const metadata: Metadata = {
@@ -69,7 +69,7 @@ export default async function EventsPage({
 
       <p className="mt-8 text-sm text-muted">
         Menampilkan <span className="font-semibold text-navy-900">{result.items.length}</span> dari{" "}
-        <span className="font-semibold text-navy-900">{result.total}</span> event
+        <span className="font-semibold text-navy-900">{result.pagination.total_items}</span> event
         {q && (
           <>
             {" "}
@@ -96,8 +96,8 @@ export default async function EventsPage({
       )}
 
       <Pagination
-        page={result.page}
-        totalPages={result.totalPages}
+        page={result.pagination.page}
+        totalPages={result.pagination.total_pages}
         params={{ q, category, city, date, sort }}
       />
 

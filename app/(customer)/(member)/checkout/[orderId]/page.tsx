@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useParams, useRouter } from "next/navigation";
 import { CreditCard } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -11,15 +13,16 @@ import { Countdown } from "@/components/ui/countdown";
 import { DetailHeader } from "@/components/ui/detail-header";
 import { Price } from "@/components/ui/price";
 import { SummaryRow } from "@/components/ui/summary-row";
-import { payOrderAction } from "@/lib/actions/order.action";
+import { useAuth } from "@/components/providers/auth-provider";
+import { getUserFromStorage } from "@/lib/api";
 import { orderStatusMeta } from "@/lib/constants";
+import { requireOwnedOrder } from "@/lib/ownership";
+import { PREVIEW_MODE, previewSession } from "@/lib/preview";
 import { formatDate, formatDateTime, formatRupiah } from "@/lib/utils";
-import { getOrderById } from "@/services/order.service";
+import { getOrderById, payOrder } from "@/services/order.service";
 import { getPaymentMethods } from "@/services/payment.service";
-
-export const metadata: Metadata = {
-  title: "Pembayaran",
-};
+import type { Order } from "@/types/order";
+import type { PaymentMethod } from "@/types/payment";
 
 const groupLabel: Record<string, string> = {
   bank: "Transfer bank / Virtual Account",
@@ -27,14 +30,72 @@ const groupLabel: Record<string, string> = {
   card: "Kartu kredit / debit",
 };
 
-export default async function CheckoutPage({
-  params,
-}: {
-  params: Promise<{ orderId: string }>;
-}) {
-  const { orderId } = await params;
-  const [order, methods] = await Promise.all([getOrderById(orderId), getPaymentMethods()]);
-  if (!order) notFound();
+export default function CheckoutPage() {
+  const router = useRouter();
+  const { orderId } = useParams<{ orderId: string }>();
+  const { user } = useAuth();
+  const session = useMemo(
+    () =>
+      user ?? getUserFromStorage() ?? (PREVIEW_MODE ? previewSession("customer") : null),
+    [user],
+  );
+
+  const [foundOrder, setFoundOrder] = useState<Order | undefined>(undefined);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    void (async () => {
+      try {
+        const [found, paymentMethods] = await Promise.all([
+          getOrderById(orderId),
+          getPaymentMethods(),
+        ]);
+        if (!active) return;
+        setFoundOrder(found);
+        setMethods(paymentMethods);
+        setErrorMsg("");
+      } catch {
+        if (active) setErrorMsg("Gagal memuat data pembayaran");
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [orderId, session]);
+
+  if (isLoading || !session) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+
+  const order = requireOwnedOrder(foundOrder, session);
+
+  async function handlePay(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const formData = new FormData(event.currentTarget);
+    const methodName = formData.get("methodId")?.toString() ?? "";
+    const result = await payOrder(order.id, methodName);
+
+    if (!result) {
+      alert("Fitur belum tersedia");
+      return;
+    }
+    router.push(`/checkout/${order.id}/status`);
+  }
 
   const groups = ["bank", "ewallet", "card"].filter((group) =>
     methods.some((method) => method.group === group),
@@ -43,6 +104,12 @@ export default async function CheckoutPage({
 
   return (
     <main>
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <DetailHeader
         backHref="/orders"
         backLabel="Kembali ke riwayat"
@@ -83,7 +150,7 @@ export default async function CheckoutPage({
         </div>
       ) : (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <form action={payOrderAction} className="space-y-4">
+          <form onSubmit={handlePay} className="space-y-4">
             <input type="hidden" name="orderId" value={order.id} />
             <Card className="p-5">
               <CardHeader

@@ -1,6 +1,10 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useMemo, useState } from "react";
 import { ArrowRight, Receipt } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Alert } from "@/components/ui/alert";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -8,14 +12,12 @@ import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
+import { getUserFromStorage } from "@/lib/api";
 import { orderStatusMeta } from "@/lib/constants";
-import { requireAuth } from "@/lib/guards";
+import { PREVIEW_MODE, previewSession } from "@/lib/preview";
 import { formatDate, formatRupiah } from "@/lib/utils";
 import { getOrdersByCustomer } from "@/services/order.service";
-
-export const metadata: Metadata = {
-  title: "Riwayat Transaksi",
-};
+import type { Order } from "@/types/order";
 
 const filters: { value: string; label: string }[] = [
   { value: "", label: "Semua" },
@@ -25,14 +27,43 @@ const filters: { value: string; label: string }[] = [
   { value: "expired", label: "Kedaluwarsa" },
 ];
 
-export default async function OrdersPage({
+export default function OrdersPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
-  const session = await requireAuth("/orders");
-  const { status = "" } = await searchParams;
-  const orders = await getOrdersByCustomer(session.id);
+  const { status = "" } = use(searchParams);
+  const { user } = useAuth();
+  const session = useMemo(
+    () =>
+      user ?? getUserFromStorage() ?? (PREVIEW_MODE ? previewSession("customer") : null),
+    [user],
+  );
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    getOrdersByCustomer(session.id)
+      .then((data) => {
+        if (!active) return;
+        setOrders(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (active) setErrorMsg("Gagal memuat riwayat transaksi");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session]);
 
   const filtered = status ? orders.filter((order) => order.status === status) : orders;
   const paid = orders.filter((order) => order.status === "paid");
@@ -41,6 +72,17 @@ export default async function OrdersPage({
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Transaksi"
         title="Riwayat transaksi"

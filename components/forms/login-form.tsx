@@ -1,21 +1,70 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
 import { ArrowRight } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox, Field, Input } from "@/components/ui/input";
-import { loginAction } from "@/lib/actions/auth.action";
-import type { AuthFormState } from "@/types/auth";
+import { useAuth } from "@/components/providers/auth-provider";
+import { getApiErrorMessage, saveTokensToStorage } from "@/lib/api";
+import { loginRequest, toSessionUser } from "@/services/authServices";
 
-const initialState: AuthFormState = {};
+const targetByRole: Record<string, string> = {
+  customer: "/events",
+  organizer: "/organizer",
+  super_admin: "/admin",
+  gate_staff: "/events",
+};
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function safeNext(value: FormDataEntryValue | null): string {
+  const raw = typeof value === "string" ? value : "";
+  return raw.startsWith("/") && !raw.startsWith("//") ? raw : "";
+}
 
 export function LoginForm({ next }: { next?: string }) {
-  const [state, formAction, pending] = useActionState(
-    loginAction,
-    initialState,
-  );
+  const router = useRouter();
+  const { setUser } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isLoading) return;
+
+    const formData = new FormData(event.currentTarget);
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+
+    if (!email || !password) {
+      setErrorMsg("Email dan password wajib diisi.");
+      return;
+    }
+    if (!emailPattern.test(email)) {
+      setErrorMsg("Format email belum benar.");
+      return;
+    }
+    if (password.length < 6) {
+      setErrorMsg("Password minimal 6 karakter.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg("");
+    try {
+      const data = await loginRequest({ email, password });
+      const user = toSessionUser(data.user);
+      saveTokensToStorage(data.access_token, data.refresh_token);
+      setUser(user);
+      router.push(safeNext(formData.get("next")) || next || targetByRole[user.role] || "/");
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Email atau password salah."));
+      setIsLoading(false);
+    }
+  }
 
   return (
     <div className="w-full">
@@ -25,13 +74,13 @@ export function LoginForm({ next }: { next?: string }) {
         <span className="font-semibold text-navy-900">Tiquet</span>.
       </p>
 
-      {state.error && (
+      {errorMsg && (
         <Alert tone="danger" className="mt-3">
-          {state.error}
+          {errorMsg}
         </Alert>
       )}
 
-      <form action={formAction} className="mt-4 space-y-3">
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
         {next && <input type="hidden" name="next" value={next} />}
 
         <Field label="Email" htmlFor="email">
@@ -68,8 +117,8 @@ export function LoginForm({ next }: { next?: string }) {
           </Link>
         </div>
 
-        <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "Memproses..." : "Masuk"}{" "}
+        <Button type="submit" disabled={isLoading} className="w-full">
+          {isLoading ? "Memproses..." : "Masuk"}{" "}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Button>
       </form>

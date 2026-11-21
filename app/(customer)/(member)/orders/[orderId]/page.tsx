@@ -1,36 +1,109 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useAuth } from "@/components/providers/auth-provider";
+import { requireOwnedOrder } from "@/lib/ownership";
 import { CreditCard, QrCode, Receipt, Ticket as TicketIcon } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { DetailHeader } from "@/components/ui/detail-header";
 import { Price } from "@/components/ui/price";
 import { SummaryRow } from "@/components/ui/summary-row";
+import { getApiErrorMessage, getUserFromStorage } from "@/lib/api";
 import { orderStatusMeta, ticketStatusMeta } from "@/lib/constants";
+import { PREVIEW_MODE, previewSession } from "@/lib/preview";
 import { formatDate, formatDateTime, formatRupiah } from "@/lib/utils";
-import { getOrderById } from "@/services/order.service";
-import { getTicketsForOrder } from "@/services/ticket.service";
+import { cancelOrder, getOrderById } from "@/services/order.service";
+import { getTicketsForOrder } from "@/services/ticketServices";
+import type { Order } from "@/types/order";
+import type { Ticket } from "@/types/ticket";
 
-export const metadata: Metadata = {
-  title: "Detail Order",
-};
+export default function OrderDetailPage() {
+  const { orderId } = useParams<{ orderId: string }>();
+  const { user } = useAuth();
+  const session = useMemo(
+    () =>
+      user ?? getUserFromStorage() ?? (PREVIEW_MODE ? previewSession("customer") : null),
+    [user],
+  );
 
-export default async function OrderDetailPage({
-  params,
-}: {
-  params: Promise<{ orderId: string }>;
-}) {
-  const { orderId } = await params;
-  const order = await getOrderById(orderId);
-  if (!order) notFound();
+  const [foundOrder, setFoundOrder] = useState<Order | undefined>(undefined);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isCancelling, setIsCancelling] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const tickets = await getTicketsForOrder(order.id);
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    void (async () => {
+      try {
+        const found = await getOrderById(orderId);
+        if (!active) return;
+        setFoundOrder(found);
+
+        const ticketData = found ? await getTicketsForOrder(found.id) : [];
+        if (!active) return;
+        setTickets(ticketData);
+        setErrorMsg("");
+      } catch {
+        if (active) setErrorMsg("Gagal memuat detail order");
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [orderId, session]);
+
+  async function handleCancel() {
+    if (isCancelling) return;
+    if (!window.confirm("Batalkan order ini? Kuota tiket akan dikembalikan.")) return;
+
+    setIsCancelling(true);
+    try {
+      await cancelOrder(orderId);
+      const updated = await getOrderById(orderId);
+      if (updated) {
+        setFoundOrder(updated);
+        setTickets(await getTicketsForOrder(updated.id));
+      }
+      setErrorMsg("");
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Gagal membatalkan order"));
+    } finally {
+      setIsCancelling(false);
+    }
+  }
+
+  if (isLoading || !session) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+
+  const order = requireOwnedOrder(foundOrder, session);
 
   return (
     <main>
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <DetailHeader
         backHref="/orders"
         backLabel="Kembali ke riwayat"
@@ -43,6 +116,17 @@ export default async function OrderDetailPage({
               <ButtonLink href={`/checkout/${order.id}`} size="sm">
                 <CreditCard className="h-3.5 w-3.5" /> Bayar sekarang
               </ButtonLink>
+            )}
+            {order.status === "pending" && (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={handleCancel}
+                disabled={isCancelling}
+              >
+                {isCancelling ? "Membatalkan..." : "Batalkan"}
+              </Button>
             )}
             {order.status === "paid" && (
               <ButtonLink href="/tickets" size="sm">

@@ -8,7 +8,7 @@ export default function AuthLayout({
     <div className="flex min-h-screen bg-white">
       <section className="relative hidden min-h-screen w-[46%] flex-col justify-between overflow-hidden bg-navy-950 px-12 py-12 text-white lg:flex xl:px-16">
         <Image
-          src="/images/hero.jpg"
+          src="/images/events/neon-nights.jpg"
           alt="Suasana acara langsung"
           fill
           priority

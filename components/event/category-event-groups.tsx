@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { CategoryIcon } from "@/components/event/category-icon";
 import { SectionHeading } from "@/components/ui/section-heading";
-import type { CategoryEventGroup } from "@/services/event.service";
+import type { CategoryEventGroup } from "@/services/eventServices";
 
 /**
  * Compact category navigation shown below the filtered catalogue.

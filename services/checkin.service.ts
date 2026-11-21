@@ -1,17 +1,15 @@
-import { checkIns } from "@/lib/mocks/checkins";
 import type { CheckIn } from "@/types/checkin";
 
-export async function getCheckIns(eventId?: string): Promise<CheckIn[]> {
-  const list = eventId ? checkIns.filter((checkIn) => checkIn.eventId === eventId) : checkIns;
-  return [...list].sort((a, b) => b.at.localeCompare(a.at));
+/** Endpoint check-in belum tersedia; kembalikan data kosong bertipe. */
+export async function getCheckIns(_eventId?: string): Promise<CheckIn[]> {
+  return [];
 }
 
-export async function getCheckInSummary(eventId?: string) {
-  const list = await getCheckIns(eventId);
+export async function getCheckInSummary(_eventId?: string) {
   return {
-    valid: list.filter((checkIn) => checkIn.result === "valid").length,
-    duplicate: list.filter((checkIn) => checkIn.result === "duplicate").length,
-    invalid: list.filter((checkIn) => checkIn.result === "invalid").length,
-    total: list.length,
+    valid: 0,
+    duplicate: 0,
+    invalid: 0,
+    total: 0,
   };
 }
