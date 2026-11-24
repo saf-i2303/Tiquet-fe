@@ -3,21 +3,24 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, Mail, ScanLine, ShieldCheck, Users } from "lucide-react";
+import { BadgeCheck, Mail, ScanLine, ShieldCheck, Trash2, Users } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { InviteMemberForm } from "@/components/organizer/invite-member-form";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { memberRoleLabel, memberStatusMeta } from "@/lib/constants";
+import { getApiErrorMessage } from "@/lib/api";
 import { requireOrganizerId } from "@/lib/ownership";
 import {
+  deleteStaff,
   getOrganizerEvents,
   getOrganizerMembers,
 } from "@/services/organizerServices";
@@ -51,6 +54,8 @@ export default function OrganizerTeamPage({
   const [events, setEvents] = useState<EventWithStats[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [invitedLocally, setInvitedLocally] = useState(false);
+  const [deletingId, setDeletingId] = useState("");
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     if (isLoading || !user) return;
@@ -91,6 +96,23 @@ export default function OrganizerTeamPage({
     router.refresh();
   }
 
+  async function handleDeleteStaff(userId: string) {
+    if (!window.confirm("Hapus anggota tim ini? Aksesnya akan dicabut.")) return;
+    setDeletingId(userId);
+    setActionError("");
+    try {
+      await deleteStaff(userId);
+      const organizerId = requireOrganizerId(user!);
+      const data = await getOrganizerMembers(organizerId);
+      setMembers(data);
+      router.refresh();
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "Gagal menghapus anggota tim."));
+    } finally {
+      setDeletingId("");
+    }
+  }
+
   const eventTitle = (eventId: string) =>
     events.find((event) => event.id === eventId)?.title ?? eventId;
 
@@ -118,6 +140,11 @@ export default function OrganizerTeamPage({
       {error === "not-found" && (
         <Alert tone="danger" className="mb-5">
           Data organizer tidak ditemukan.
+        </Alert>
+      )}
+      {actionError && (
+        <Alert tone="danger" className="mb-5">
+          {actionError}
         </Alert>
       )}
 
@@ -172,6 +199,7 @@ export default function OrganizerTeamPage({
                       <th className="th">Peran</th>
                       <th className="th">Event ditugaskan</th>
                       <th className="th">Status</th>
+                      <th className="th">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -215,6 +243,20 @@ export default function OrganizerTeamPage({
                         </td>
                         <td className="td">
                           <StatusBadge value={member.status} map={memberStatusMeta} />
+                        </td>
+                        <td className="td">
+                          {member.role !== "owner" && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteStaff(member.id)}
+                              disabled={deletingId === member.id}
+                              aria-label={`Hapus ${member.name}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-danger" />
+                            </Button>
+                          )}
                         </td>
                       </tr>
                     ))}

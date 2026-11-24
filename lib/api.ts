@@ -3,6 +3,7 @@ import type {
   ApiErrorPayload,
   ApiResponse,
 } from "@/types/api";
+import type { AuthData } from "@/types/auth";
 import type { SessionUser } from "@/types/user";
 
 /**
@@ -61,6 +62,11 @@ export const AUTH_CLEARED_EVENT = "tiketku:auth-cleared";
 
 /** Mencegah beberapa 401 bersamaan memicu redirect berulang. */
 let isRedirecting = false;
+
+/** Satu proses refresh dipakai bersama (single-flight) untuk banyak 401 bersamaan. */
+let refreshing: Promise<boolean> | null = null;
+
+const REFRESH_PATH = "/auth/refresh";
 
 export class ApiError extends Error {
   status: number;
@@ -189,6 +195,54 @@ export function clearTokens(): void {
   window.dispatchEvent(new Event(AUTH_CLEARED_EVENT));
 }
 
+/**
+ * Refresh token level-rendah. Sengaja tinggal di lib/api.ts agar service
+ * (yang meng-import modul ini) tidak menyebabkan circular import.
+ * Mengembalikan data auth baru, atau null bila refresh gagal.
+ */
+export async function refreshAccessToken(): Promise<AuthData | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken || typeof window === "undefined") return null;
+
+  try {
+    const response = await fetch(`${getApiBaseUrl()}${REFRESH_PATH}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      credentials: "omit",
+      cache: "no-store",
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!response.ok) return null;
+
+    const json = (await response.json().catch(() => null)) as ApiResponse<AuthData> | null;
+    const data = json?.data;
+    if (!data?.access_token || !data.refresh_token) return null;
+
+    saveTokensToStorage(data.access_token, data.refresh_token);
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** Jalankan refresh sekali untuk beberapa request yang kena 401 bersamaan. */
+function refreshSession(): Promise<boolean> {
+  if (typeof window === "undefined" || !getRefreshToken()) {
+    return Promise.resolve(false);
+  }
+  if (!refreshing) {
+    refreshing = refreshAccessToken()
+      .then((data) => data !== null)
+      .finally(() => {
+        refreshing = null;
+      });
+  }
+  return refreshing;
+}
+
 /** Handler 401 terpusat: hapus token lalu arahkan ke /login. */
 function handleUnauthorized(): void {
   if (isRedirecting) return;
@@ -312,28 +366,45 @@ async function request<T>(
   const { headers, next, skipAuth, cache, ...rest } = options;
   const payload = serializeBody(body);
   const url = buildUrl(path, params);
-  const requestHeaders = await buildHeaders(payload, headers, skipAuth);
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      ...rest,
-      method,
-      ...(payload === undefined ? {} : { body: payload }),
-      headers: requestHeaders,
-      ...(next ? { next } : { cache: cache ?? "no-store" }),
-      // Token ada di localStorage, bukan cookie; selaras dengan AllowCredentials=false.
-      credentials: "omit",
-    });
-  } catch (error) {
-    if (isNextControlError(error)) throw error;
-    throw toNetworkError(error, url);
+  /** Header dibangun ulang tiap kirim agar token hasil refresh ikut terpakai. */
+  const send = async (): Promise<Response> => {
+    const requestHeaders = await buildHeaders(payload, headers, skipAuth);
+    try {
+      return await fetch(url, {
+        ...rest,
+        method,
+        ...(payload === undefined ? {} : { body: payload }),
+        headers: requestHeaders,
+        ...(next ? { next } : { cache: cache ?? "no-store" }),
+        // Token ada di localStorage, bukan cookie; selaras dengan AllowCredentials=false.
+        credentials: "omit",
+      });
+    } catch (error) {
+      if (isNextControlError(error)) throw error;
+      throw toNetworkError(error, url);
+    }
+  };
+
+  let response = await send();
+
+  // 401: coba refresh sekali (single-flight), lalu ulangi request asli.
+  // Endpoint auth sudah skipAuth dan tidak boleh memicu refresh berantai.
+  if (
+    response.status === 401 &&
+    !skipAuth &&
+    path !== REFRESH_PATH &&
+    typeof window !== "undefined" &&
+    (await refreshSession())
+  ) {
+    response = await send();
   }
 
   // Backend: success -> { success, message, data? }; error -> { success, message, error: { code, details } }.
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    // Refresh gagal / request tetap 401 -> logout terpusat (hanya dipanggil sekali).
     if (response.status === 401) handleUnauthorized();
     const raw = data as ApiErrorPayload | null;
     const payloadError: ApiErrorPayload | undefined = raw

@@ -1,3 +1,13 @@
+import type { Role } from "@/types/user";
+
+/** Halaman profil akun per role (bukan profil bisnis organizer). */
+export const accountProfileRoutes: Record<Role, string> = {
+  customer: "/profile",
+  organizer: "/organizer/account",
+  gate_staff: "/gate/profile",
+  super_admin: "/admin/profile",
+};
+
 export const routes = {
   home: "/",
   events: "/events",
@@ -17,10 +27,12 @@ export const routes = {
   orders: "/orders",
   order: (id: string) => `/orders/${id}`,
   profile: "/profile",
+  accountProfile: accountProfileRoutes,
 
   organizer: {
     dashboard: "/organizer",
     profile: "/organizer/profile",
+    account: accountProfileRoutes.organizer,
     verification: "/organizer/verification",
     events: "/organizer/events",
     eventNew: "/organizer/events/new",
@@ -32,6 +44,10 @@ export const routes = {
     transactions: "/organizer/transactions",
     team: "/organizer/team",
     payouts: "/organizer/payouts",
+  },
+
+  gate: {
+    profile: accountProfileRoutes.gate_staff,
   },
 
   admin: {
@@ -48,5 +64,6 @@ export const routes = {
     payouts: "/admin/payouts",
     activity: "/admin/activity",
     settings: "/admin/settings",
+    profile: accountProfileRoutes.super_admin,
   },
 } as const;

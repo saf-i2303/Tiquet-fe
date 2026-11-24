@@ -5,14 +5,27 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, LogOut, Settings, UserCog } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { LogoutForm } from "@/components/layout/logout-form";
+import { accountProfileRoutes, routes } from "@/config/routes";
 import type { Role, SessionUser } from "@/types/user";
 
 /** Tujuan menu profil/pengaturan untuk tiap role. */
 const destinations: Record<Role, { profile: string; settings: string }> = {
-  customer: { profile: "/profile", settings: "/profile" },
-  organizer: { profile: "/organizer/profile", settings: "/organizer/profile" },
-  super_admin: { profile: "/profile", settings: "/admin/settings" },
-  gate_staff: { profile: "/profile", settings: "/profile" },
+  customer: {
+    profile: accountProfileRoutes.customer,
+    settings: accountProfileRoutes.customer,
+  },
+  organizer: {
+    profile: accountProfileRoutes.organizer,
+    settings: routes.organizer.profile,
+  },
+  super_admin: {
+    profile: accountProfileRoutes.super_admin,
+    settings: routes.admin.settings,
+  },
+  gate_staff: {
+    profile: accountProfileRoutes.gate_staff,
+    settings: accountProfileRoutes.gate_staff,
+  },
 };
 
 /**

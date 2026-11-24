@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowRight, BadgeCheck, Users } from "lucide-react";
+import { ArrowRight, BadgeCheck, Eye, EyeOff, Users } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ const targetByRole: Record<string, string> = {
   customer: "/events",
   organizer: "/organizer",
   super_admin: "/admin",
-  gate_staff: "/events",
+  gate_staff: "/scan",
 };
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -26,6 +26,7 @@ export function RegisterForm() {
   const { setUser } = useAuth();
   const [role, setRole] = useState<"customer" | "organizer">("customer");
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -110,16 +111,32 @@ export function RegisterForm() {
         </Field>
 
         <Field label="Password" htmlFor="password" hint="8-72 karakter">
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            maxLength={72}
-            autoComplete="new-password"
-            placeholder="Buat password"
-          />
+          <div className="relative">
+            <Input
+              id="password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              maxLength={72}
+              autoComplete="new-password"
+              placeholder="Buat password"
+              className="pr-11"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted transition hover:text-navy-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-900/20"
+              aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </Field>
 
         <div>

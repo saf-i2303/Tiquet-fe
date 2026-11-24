@@ -1,4 +1,11 @@
-import { api, clearTokens, saveTokensToStorage, unwrap } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  clearTokens,
+  refreshAccessToken,
+  saveTokensToStorage,
+  unwrap,
+} from "@/lib/api";
 import type {
   AuthData,
   AuthEnvelope,
@@ -28,15 +35,15 @@ export async function loginRequest(payload: LoginPayload): Promise<AuthData> {
   return unwrap(response);
 }
 
-export async function refreshTokenRequest(
-  refreshToken: string,
-): Promise<AuthData> {
-  const response = await api.post<AuthEnvelope>(
-    "/auth/refresh",
-    { refresh_token: refreshToken },
-    { skipAuth: true },
-  );
-  return unwrap(response);
+/**
+ * POST /api/v1/auth/refresh
+ * Implementasi ada di lib/api.ts (dipakai juga oleh handler 401 terpusat)
+ * agar tidak terjadi circular import antara lib/api dan services.
+ */
+export async function refreshTokenRequest(_refreshToken?: string): Promise<AuthData> {
+  const data = await refreshAccessToken();
+  if (!data) throw new ApiError("Sesi berakhir. Silakan masuk kembali.", 401);
+  return data;
 }
 
 export async function logoutRequest(refreshToken: string): Promise<void> {

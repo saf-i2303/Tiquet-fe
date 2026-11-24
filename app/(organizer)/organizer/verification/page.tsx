@@ -2,11 +2,13 @@
 
 import { use, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { BadgeCheck, FileText, ShieldCheck, Upload } from "lucide-react";
+import { BadgeCheck, FileText, ShieldCheck, Trash2, Upload } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { getApiErrorMessage } from "@/lib/api";
 import {
   addOrganizerDocument,
+  deleteOrganizerDocument,
   getOrganizer,
   listOrganizerDocuments,
   submitVerification,
@@ -44,6 +46,8 @@ export default function OrganizerVerificationPage({
   const [submittedLocally, setSubmittedLocally] = useState(false);
   const [uploadedLocally, setUploadedLocally] = useState(false);
   const [localError, setLocalError] = useState("");
+  const [deletingId, setDeletingId] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (isLoading || !user) return;
@@ -76,6 +80,20 @@ export default function OrganizerVerificationPage({
       })
       .catch(() => undefined);
     router.refresh();
+  }
+
+  async function handleDeleteDocument(id: string) {
+    if (!window.confirm("Hapus dokumen ini?")) return;
+    setDeletingId(id);
+    setDeleteError("");
+    try {
+      await deleteOrganizerDocument(id);
+      refetchOrganizer();
+    } catch (error) {
+      setDeleteError(getApiErrorMessage(error, "Gagal menghapus dokumen."));
+    } finally {
+      setDeletingId("");
+    }
   }
 
   async function handleUpload(formEvent: FormEvent<HTMLFormElement>) {
@@ -169,6 +187,11 @@ export default function OrganizerVerificationPage({
           Data organizer tidak ditemukan.
         </Alert>
       )}
+      {deleteError && (
+        <Alert tone="danger" className="mb-5">
+          {deleteError}
+        </Alert>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Card className="p-5">
@@ -194,7 +217,19 @@ export default function OrganizerVerificationPage({
                     </div>
                   </div>
                 </div>
-                <StatusBadge value={document.status} map={documentStatusMeta} />
+                <div className="flex items-center gap-2">
+                  <StatusBadge value={document.status} map={documentStatusMeta} />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteDocument(document.id)}
+                    disabled={deletingId === document.id}
+                    aria-label={`Hapus ${document.name}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-danger" />
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

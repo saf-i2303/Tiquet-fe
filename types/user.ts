@@ -20,5 +20,7 @@ export interface SessionUser {
   phone?: string;
   city?: string;
   role: Role;
+  /** Role dari JWT backend; dipakai untuk redirect/authorization UX. */
+  roles?: Role[];
   organizerId?: string;
 }

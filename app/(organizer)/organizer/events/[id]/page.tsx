@@ -3,7 +3,7 @@
 import { use, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, Check, Pencil, Send, Ticket, TrendingUp, Users } from "lucide-react";
+import { ArrowUpRight, Check, Pencil, Send, Ticket, Trash2, TrendingUp, Users } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { QuickLinksCard } from "@/components/shared/quick-links-card";
@@ -21,9 +21,10 @@ import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
 import { SummaryRow } from "@/components/ui/summary-row";
 import { attendeeStatusMeta, categoryMeta, eventStatusMeta } from "@/lib/constants";
+import { getApiErrorMessage } from "@/lib/api";
 import { requireOrganizerId, requireOwnedEvent } from "@/lib/ownership";
 import { formatTime, percent } from "@/lib/utils";
-import { getEventById, setEventStatus } from "@/services/eventServices";
+import { deleteEvent, getEventById, setEventStatus } from "@/services/eventServices";
 import {
   getEventAttendees,
   getOrganizerTransactions,
@@ -48,6 +49,8 @@ export default function OrganizerEventDetailPage({
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [submittedLocally, setSubmittedLocally] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [actionError, setActionError] = useState("");
 
   useEffect(() => {
     if (isLoading || !user) return;
@@ -95,6 +98,20 @@ export default function OrganizerEventDetailPage({
       window.alert(
         submitError instanceof Error ? submitError.message : "Gagal mengajukan moderasi.",
       );
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm("Hapus event ini? Tindakan ini tidak bisa dibatalkan.")) return;
+    setIsDeleting(true);
+    setActionError("");
+    try {
+      await deleteEvent(eventId);
+      router.push("/organizer/events");
+      router.refresh();
+    } catch (error) {
+      setActionError(getApiErrorMessage(error, "Gagal menghapus event."));
+      setIsDeleting(false);
     }
   }
 
@@ -174,11 +191,25 @@ export default function OrganizerEventDetailPage({
                 </Button>
               </form>
             )}
+            {ownedEvent.status === "draft" && (
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={handleDelete}
+                disabled={isDeleting}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Hapus event
+              </Button>
+            )}
           </>
         }
       />
 
       {notice && <Alert tone={notice.tone} className="mb-6">{notice.text}</Alert>}
+      {actionError && (
+        <Alert tone="danger" className="mb-6">{actionError}</Alert>
+      )}
 
       <div className="stat-grid">
         <StatTile

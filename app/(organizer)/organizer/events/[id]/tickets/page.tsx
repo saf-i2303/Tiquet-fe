@@ -168,13 +168,22 @@ export default function EventTicketsPage({
                   </span>
                   <span>Kuota {ticket.quota.toLocaleString("id-ID")}</span>
                 </div>
-                <ButtonLink
-                  href={`/organizer/events/${ownedEvent.id}/tickets?ticketTypeId=${ticket.id}`}
-                  variant="outline"
-                  size="sm"
-                >
-                  <Pencil className="h-3.5 w-3.5" /> Edit
-                </ButtonLink>
+                <div className="flex flex-wrap items-center gap-2">
+                  <ButtonLink
+                    href={`/organizer/events/${ownedEvent.id}/tickets/${ticket.id}`}
+                    variant="ghost"
+                    size="sm"
+                  >
+                    Detail
+                  </ButtonLink>
+                  <ButtonLink
+                    href={`/organizer/events/${ownedEvent.id}/tickets?ticketTypeId=${ticket.id}`}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit
+                  </ButtonLink>
+                </div>
               </div>
 
               {ticket.benefits.length > 0 && (

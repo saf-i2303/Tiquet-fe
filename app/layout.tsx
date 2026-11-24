@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Plus_Jakarta_Sans } from "next/font/google";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { HealthBanner } from "@/components/providers/health-banner";
 import { siteConfig } from "@/config/site";
 import "./globals.css";
 
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${headingFont.variable} ${bodyFont.variable}`}
     >
       <body>
+        <HealthBanner />
         <AuthProvider>{children}</AuthProvider>
       </body>
     </html>

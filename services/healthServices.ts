@@ -8,6 +8,13 @@ export type HealthPayload = {
 };
 
 /** GET /api/v1/health — pengecekan konektivitas server dan database. */
-export async function checkHealth(): Promise<HealthPayload> {
-  return unwrap(await api.get<ApiResponse<HealthPayload>>("/health"));
+export async function checkHealth(signal?: AbortSignal): Promise<HealthPayload> {
+  return unwrap(
+    await api.get<ApiResponse<HealthPayload>>("/health", undefined, {
+      // Endpoint publik: jangan kirim token yang bisa kedaluwarsa.
+      skipAuth: true,
+      signal,
+      cache: "no-store",
+    }),
+  );
 }
