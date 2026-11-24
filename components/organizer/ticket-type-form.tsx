@@ -1,20 +1,72 @@
+"use client";
+
+import type { FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
-import { saveTicketTypeAction } from "@/lib/actions/organizer.action";
+import { saveTicketType } from "@/services/eventServices";
 import { toDateTimeInput } from "@/lib/utils";
 import type { TicketType } from "@/types/event";
 
 export function TicketTypeForm({
   eventId,
   ticket,
+  onSaved,
 }: {
   eventId: string;
   ticket?: TicketType;
+  onSaved?: () => void;
 }) {
+  const router = useRouter();
+
+  async function handleSubmit(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault();
+    const data = new FormData(formEvent.currentTarget);
+    const name = String(data.get("name") ?? "").trim();
+    const price = Number(data.get("price"));
+    const quota = Number(data.get("quota"));
+    const maxPerOrder = Number(data.get("maxPerOrder") ?? 4);
+
+    if (
+      !name ||
+      !Number.isFinite(price) ||
+      price <= 0 ||
+      !Number.isFinite(quota) ||
+      quota <= 0
+    ) {
+      window.alert("Nama kategori, harga, dan kuota wajib diisi dengan benar.");
+      return;
+    }
+
+    try {
+      await saveTicketType({
+        id: ticket?.id,
+        eventId,
+        name,
+        price,
+        quota,
+        maxPerOrder: Number.isFinite(maxPerOrder)
+          ? Math.min(10, Math.max(1, maxPerOrder))
+          : 4,
+        salesStart: String(data.get("salesStart") ?? ""),
+        salesEnd: String(data.get("salesEnd") ?? ""),
+        description: String(data.get("description") ?? ""),
+        benefits: String(data.get("benefits") ?? "")
+          .split(",")
+          .map((benefit) => benefit.trim())
+          .filter(Boolean),
+      });
+      onSaved?.();
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Gagal menyimpan kategori tiket.");
+    }
+  }
+
   return (
-    <form action={saveTicketTypeAction} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
       <input type="hidden" name="eventId" value={eventId} />
       {ticket && <input type="hidden" name="ticketTypeId" value={ticket.id} />}
 

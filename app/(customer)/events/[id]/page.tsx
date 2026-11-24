@@ -22,7 +22,7 @@ import { Price } from "@/components/ui/price";
 import { Progress } from "@/components/ui/progress";
 import { categoryMeta } from "@/lib/constants";
 import { formatDate, formatTime, percent } from "@/lib/utils";
-import { getEventById } from "@/services/event.service";
+import { getEventById } from "@/services/eventServices";
 
 export async function generateMetadata({
   params,

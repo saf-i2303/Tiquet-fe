@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import { notFound } from "next/navigation";
 import { Ban, Check, Mail, MapPin, Phone, Receipt } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
@@ -13,33 +15,71 @@ import { Price } from "@/components/ui/price";
 import { StatTile } from "@/components/ui/stat-tile";
 import { SummaryRow } from "@/components/ui/summary-row";
 import { TableShell } from "@/components/ui/table-shell";
-import { toggleUserStatusAction } from "@/lib/actions/admin.action";
 import { orderStatusMeta, roleMeta, userStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDate, formatDateTime, formatRupiah } from "@/lib/utils";
 import {
   getAllOrders,
   getOrganizersList,
   getUserById,
-} from "@/services/admin.service";
+} from "@/services/adminServices";
 
-export const metadata: Metadata = {
-  title: "Detail Pengguna",
-};
-
-export default async function AdminUserDetailPage({
+export default function AdminUserDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("super_admin", "/admin/users");
-  const { id } = await params;
+  const { id } = use(params);
+  const [user, setUser] = useState<Awaited<ReturnType<typeof getUserById>>>(undefined);
+  const [orders, setOrders] = useState<Awaited<ReturnType<typeof getAllOrders>>>([]);
+  const [organizers, setOrganizers] = useState<
+    Awaited<ReturnType<typeof getOrganizersList>>
+  >([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const [user, orders, organizers] = await Promise.all([
-    getUserById(id),
-    getAllOrders(),
-    getOrganizersList(),
-  ]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([getUserById(id), getAllOrders(), getOrganizersList()])
+      .then(([nextUser, nextOrders, nextOrganizers]) => {
+        if (!active) return;
+        setUser(nextUser);
+        setOrders(nextOrders);
+        setOrganizers(nextOrganizers);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setUser(undefined);
+        setOrders([]);
+        setOrganizers([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  if (isLoading) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+  if (errorMsg) {
+    return (
+      <main>
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      </main>
+    );
+  }
   if (!user) notFound();
 
   const userOrders = orders.filter((order) => order.customerId === user.id);
@@ -64,7 +104,12 @@ export default async function AdminUserDetailPage({
         }
         actions={
           user.role !== "super_admin" ? (
-            <form action={toggleUserStatusAction}>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                alert("Fitur belum tersedia");
+              }}
+            >
               <input type="hidden" name="userId" value={user.id} />
               <Button variant={user.status === "active" ? "danger" : "outline"}>
                 {user.status === "active" ? (

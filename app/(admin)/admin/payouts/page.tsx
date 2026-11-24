@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import { ArrowRight, Banknote, Clock, Landmark, Wallet } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -10,24 +12,40 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Price } from "@/components/ui/price";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
-import { updatePayoutStatusAction } from "@/lib/actions/admin.action";
 import { payoutStatusFilters, payoutStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { getPayoutsList } from "@/services/admin.service";
+import { getPayoutsList } from "@/services/adminServices";
 
-export const metadata: Metadata = {
-  title: "Pencairan Dana",
-};
-
-export default async function AdminPayoutsPage({
+export default function AdminPayoutsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; saved?: string }>;
 }) {
-  await requireRole("super_admin", "/admin/payouts");
-  const { status = "", saved } = await searchParams;
-  const payouts = await getPayoutsList();
+  const { status = "", saved } = use(searchParams);
+  const [payouts, setPayouts] = useState<Awaited<ReturnType<typeof getPayoutsList>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getPayoutsList()
+      .then((data) => {
+        if (!active) return;
+        setPayouts(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setPayouts([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filtered = status ? payouts.filter((payout) => payout.status === status) : payouts;
   const pending = payouts.filter((payout) => payout.status === "pending");
@@ -37,6 +55,17 @@ export default async function AdminPayoutsPage({
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Keuangan platform"
         title="Pencairan dana"
@@ -141,7 +170,12 @@ export default async function AdminPayoutsPage({
                     </td>
                     <td className="td">
                       {payout.status === "pending" && (
-                        <form action={updatePayoutStatusAction}>
+                        <form
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            alert("Fitur belum tersedia");
+                          }}
+                        >
                           <input type="hidden" name="payoutId" value={payout.id} />
                           <input type="hidden" name="status" value="processing" />
                           <Button variant="outline" size="sm">
@@ -150,7 +184,12 @@ export default async function AdminPayoutsPage({
                         </form>
                       )}
                       {payout.status === "processing" && (
-                        <form action={updatePayoutStatusAction}>
+                        <form
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            alert("Fitur belum tersedia");
+                          }}
+                        >
                           <input type="hidden" name="payoutId" value={payout.id} />
                           <input type="hidden" name="status" value="paid" />
                           <Button size="sm">Tandai cair</Button>

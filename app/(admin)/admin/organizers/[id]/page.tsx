@@ -1,6 +1,8 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, useRouter } from "next/navigation";
 import {
   BadgeCheck,
   Building2,
@@ -22,33 +24,91 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { StatTile } from "@/components/ui/stat-tile";
 import { SummaryRow } from "@/components/ui/summary-row";
 import { TableShell } from "@/components/ui/table-shell";
-import { verifyOrganizerAction } from "@/lib/actions/admin.action";
+import { getApiErrorMessage } from "@/lib/api";
 import {
   documentStatusMeta,
   eventStatusMeta,
   memberRoleLabel,
   organizerStatusMeta,
 } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDate, formatRupiah } from "@/lib/utils";
-import { getAllEvents, getOrganizerById } from "@/services/admin.service";
+import {
+  getAllEvents,
+  getOrganizerById,
+  rejectOrganizer,
+  verifyOrganizer,
+} from "@/services/adminServices";
 
-export const metadata: Metadata = {
-  title: "Detail Organizer",
-};
-
-export default async function AdminOrganizerDetailPage({
+export default function AdminOrganizerDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("super_admin", "/admin/organizers");
-  const { id } = await params;
+  const { id } = use(params);
+  const router = useRouter();
+  const [organizer, setOrganizer] = useState<Awaited<ReturnType<typeof getOrganizerById>>>(undefined);
+  const [events, setEvents] = useState<Awaited<ReturnType<typeof getAllEvents>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const [organizer, events] = await Promise.all([
-    getOrganizerById(id),
-    getAllEvents(),
-  ]);
+  useEffect(() => {
+    let active = true;
+    Promise.all([getOrganizerById(id), getAllEvents()])
+      .then(([nextOrganizer, nextEvents]) => {
+        if (!active) return;
+        setOrganizer(nextOrganizer);
+        setEvents(nextEvents);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setOrganizer(undefined);
+        setEvents([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  async function handleDecision(decision: "verified" | "rejected") {
+    setErrorMsg("");
+    try {
+      if (decision === "verified") {
+        await verifyOrganizer(id);
+      } else {
+        const reason = window.prompt("Alasan penolakan organizer:");
+        if (reason === null || !reason.trim()) return;
+        await rejectOrganizer(id, reason.trim());
+      }
+      setOrganizer((current) => (current ? { ...current, status: decision } : current));
+      router.refresh();
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Gagal menyimpan keputusan verifikasi."));
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+  if (errorMsg) {
+    return (
+      <main>
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      </main>
+    );
+  }
   if (!organizer) notFound();
 
   const organizerEvents = events.filter((event) => event.organizerId === organizer.id);
@@ -67,22 +127,24 @@ export default async function AdminOrganizerDetailPage({
         actions={
           <>
             {organizer.status !== "verified" && (
-              <form action={verifyOrganizerAction}>
-                <input type="hidden" name="organizerId" value={organizer.id} />
-                <input type="hidden" name="decision" value="verified" />
-                <Button size="sm">
-                  <ShieldCheck className="h-3.5 w-3.5" /> Setujui
-                </Button>
-              </form>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => handleDecision("verified")}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" /> Setujui
+              </Button>
             )}
             {organizer.status !== "rejected" && (
-              <form action={verifyOrganizerAction}>
-                <input type="hidden" name="organizerId" value={organizer.id} />
-                <input type="hidden" name="decision" value="rejected" />
-                <Button variant="outline" size="sm" className="text-danger">
-                  Tolak
-                </Button>
-              </form>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-danger"
+                onClick={() => handleDecision("rejected")}
+              >
+                Tolak
+              </Button>
             )}
           </>
         }

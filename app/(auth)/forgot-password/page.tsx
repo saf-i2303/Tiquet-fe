@@ -1,20 +1,23 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useState, type FormEvent } from "react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Field, Input } from "@/components/ui/input";
-import { sendResetAction } from "@/lib/actions/auth.action";
 
-export const metadata: Metadata = {
-  title: "Pemulihan Sandi",
-};
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default async function ForgotPasswordPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ sent?: string; error?: string }>;
-}) {
-  const { sent, error } = await searchParams;
+export default function ForgotPasswordPage() {
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState(false);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = String(new FormData(event.currentTarget).get("email") ?? "").trim();
+    setError(!emailPattern.test(email));
+    setSent(emailPattern.test(email));
+  }
 
   return (
     <>
@@ -34,7 +37,7 @@ export default async function ForgotPasswordPage({
         </Alert>
       )}
 
-      <form action={sendResetAction} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
         <Field label="Email" htmlFor="email">
           <Input
             id="email"

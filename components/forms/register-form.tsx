@@ -1,23 +1,79 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState } from "react";
-import { ArrowRight, BadgeCheck, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState, type FormEvent } from "react";
+import { ArrowRight, BadgeCheck, Eye, EyeOff, Users } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
-import { registerAction } from "@/lib/actions/auth.action";
+import { useAuth } from "@/components/providers/auth-provider";
+import { getApiErrorMessage, saveTokensToStorage } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { AuthFormState } from "@/types/auth";
+import { loginRequest, registerRequest, toSessionUser } from "@/services/authServices";
 
-const initialState: AuthFormState = {};
+const targetByRole: Record<string, string> = {
+  customer: "/events",
+  organizer: "/organizer",
+  super_admin: "/admin",
+  gate_staff: "/scan",
+};
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function RegisterForm() {
-  const [state, formAction, pending] = useActionState(
-    registerAction,
-    initialState,
-  );
-  const [role, setRole] = useState("customer");
+  const router = useRouter();
+  const { setUser } = useAuth();
+  const [role, setRole] = useState<"customer" | "organizer">("customer");
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (isLoading) return;
+
+    const formData = new FormData(event.currentTarget);
+    const fullName = String(formData.get("name") ?? "").trim();
+    const email = String(formData.get("email") ?? "").trim();
+    const password = String(formData.get("password") ?? "");
+
+    if (fullName.length < 2) {
+      setErrorMsg("Nama minimal 2 karakter.");
+      return;
+    }
+    if (fullName.length > 100) {
+      setErrorMsg("Nama maksimal 100 karakter.");
+      return;
+    }
+    if (!emailPattern.test(email)) {
+      setErrorMsg("Format email belum benar.");
+      return;
+    }
+    if (password.length < 8) {
+      setErrorMsg("Password minimal 8 karakter.");
+      return;
+    }
+    if (password.length > 72) {
+      setErrorMsg("Password maksimal 72 karakter.");
+      return;
+    }
+
+    setIsLoading(true);
+    setErrorMsg("");
+    try {
+      await registerRequest({ email, password, full_name: fullName, role });
+      // Register backend tidak mengembalikan token: login dengan kredensial yang sama.
+      const data = await loginRequest({ email, password });
+      const user = toSessionUser(data.user);
+      saveTokensToStorage(data.access_token, data.refresh_token);
+      setUser(user);
+      router.push(targetByRole[user.role] || "/");
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Registrasi gagal, silakan coba lagi."));
+      setIsLoading(false);
+    }
+  }
 
   return (
     <div className="w-full">
@@ -26,50 +82,61 @@ export function RegisterForm() {
         Jelajahi event, amankan tiket, dan kelola pesanan dalam satu tempat.
       </p>
 
-      {state.error && (
+      {errorMsg && (
         <Alert tone="danger" className="mt-3">
-          {state.error}
+          {errorMsg}
         </Alert>
       )}
 
-      <form action={formAction} className="mt-4 space-y-3">
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
         <Field label="Nama lengkap" htmlFor="name">
-          <Input id="name" name="name" required placeholder="Nama kamu" />
+          <Input
+            id="name"
+            name="name"
+            required
+            maxLength={100}
+            placeholder="Nama kamu"
+          />
         </Field>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Email" htmlFor="email">
-            <Input
-              id="email"
-              name="email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder="nama@email.com"
-            />
-          </Field>
-
-          <Field label="No. WhatsApp" htmlFor="phone">
-            <Input
-              id="phone"
-              name="phone"
-              required
-              inputMode="tel"
-              placeholder="08xxxxxxxxxx"
-            />
-          </Field>
-        </div>
-
-        <Field label="Password" htmlFor="password" hint="Min. 8 karakter">
+        <Field label="Email" htmlFor="email">
           <Input
-            id="password"
-            name="password"
-            type="password"
+            id="email"
+            name="email"
+            type="email"
             required
-            minLength={8}
-            autoComplete="new-password"
-            placeholder="Buat password"
+            autoComplete="email"
+            placeholder="nama@email.com"
           />
+        </Field>
+
+        <Field label="Password" htmlFor="password" hint="8-72 karakter">
+          <div className="relative">
+            <Input
+              id="password"
+              name="password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={8}
+              maxLength={72}
+              autoComplete="new-password"
+              placeholder="Buat password"
+              className="pr-11"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((current) => !current)}
+              className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-muted transition hover:text-navy-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-navy-900/20"
+              aria-label={showPassword ? "Sembunyikan password" : "Tampilkan password"}
+              aria-pressed={showPassword}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <Eye className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          </div>
         </Field>
 
         <div>
@@ -119,8 +186,8 @@ export function RegisterForm() {
           </div>
         </div>
 
-        <Button type="submit" disabled={pending} className="mt-5 w-full">
-          {pending ? "Memproses..." : "Buat akun"}{" "}
+        <Button type="submit" disabled={isLoading} className="mt-5 w-full">
+          {isLoading ? "Memproses..." : "Buat akun"}{" "}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </Button>
       </form>

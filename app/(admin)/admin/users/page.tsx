@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import { Ban, Check, ShieldCheck, UserCog, Users } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -11,24 +13,40 @@ import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
-import { toggleUserStatusAction } from "@/lib/actions/admin.action";
 import { roleFilters, roleMeta, userStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDate } from "@/lib/utils";
-import { getUsers } from "@/services/admin.service";
+import { getUsers } from "@/services/adminServices";
 
-export const metadata: Metadata = {
-  title: "Kelola Pengguna",
-};
-
-export default async function AdminUsersPage({
+export default function AdminUsersPage({
   searchParams,
 }: {
   searchParams: Promise<{ role?: string; q?: string; saved?: string }>;
 }) {
-  await requireRole("super_admin", "/admin/users");
-  const { role = "", q = "", saved } = await searchParams;
-  const users = await getUsers();
+  const { role = "", q = "", saved } = use(searchParams);
+  const [users, setUsers] = useState<Awaited<ReturnType<typeof getUsers>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getUsers()
+      .then((data) => {
+        if (!active) return;
+        setUsers(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setUsers([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const needle = q.trim().toLowerCase();
   const filtered = users.filter((user) => {
@@ -46,6 +64,17 @@ export default async function AdminUsersPage({
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Manajemen pengguna"
         title="Pengguna platform"
@@ -151,7 +180,12 @@ export default async function AdminUsersPage({
                           Detail
                         </ButtonLink>
                         {user.role !== "super_admin" && (
-                          <form action={toggleUserStatusAction}>
+                          <form
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              alert("Fitur belum tersedia");
+                            }}
+                          >
                             <input type="hidden" name="userId" value={user.id} />
                             <Button
                               size="sm"

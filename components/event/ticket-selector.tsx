@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Check, ShieldCheck, Ticket } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Price } from "@/components/ui/price";
 import { QuantityStepper } from "@/components/ui/quantity-stepper";
-import { createOrderAction } from "@/lib/actions/order.action";
+import { getApiErrorMessage, getUserFromStorage } from "@/lib/api";
+import { createOrder } from "@/services/order.service";
 import type { TicketType } from "@/types/event";
 
 export function TicketSelector({
@@ -22,6 +25,8 @@ export function TicketSelector({
   defaultPhone?: string;
   error?: string;
 }) {
+  const router = useRouter();
+  const { user } = useAuth();
   const [quantities, setQuantities] = useState<Record<string, number>>({});
 
   const selected = useMemo(
@@ -34,8 +39,45 @@ export function TicketSelector({
     0,
   );
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const formData = new FormData(event.currentTarget);
+    const session = user ?? getUserFromStorage();
+    if (!session) {
+      alert("Silakan masuk terlebih dahulu");
+      return;
+    }
+
+    const items = selected.map((ticket) => ({
+      ticketTypeId: ticket.id,
+      qty: quantities[ticket.id] ?? 0,
+    }));
+    if (items.length === 0) {
+      alert("Pilih minimal satu tiket sebelum lanjut.");
+      return;
+    }
+
+    try {
+      const order = await createOrder({
+        eventId: formData.get("eventId")?.toString() ?? eventId,
+        customer: session,
+        items,
+        customerPhone: formData.get("phone")?.toString() || undefined,
+      });
+
+      if (!order) {
+        alert("Fitur belum tersedia");
+        return;
+      }
+      router.push(`/checkout/${order.id}`);
+    } catch (error) {
+      alert(getApiErrorMessage(error, "Gagal membuat order. Silakan coba lagi."));
+    }
+  }
+
   return (
-    <form action={createOrderAction} className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <form onSubmit={handleSubmit} className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
       <input type="hidden" name="eventId" value={eventId} />
 
       <div className="space-y-4">

@@ -5,7 +5,6 @@ import { Alert } from "@/components/ui/alert";
 import { BackLink } from "@/components/ui/back-link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { requireRole } from "@/lib/guards";
 
 export const metadata: Metadata = {
   title: "Buat Event Baru",
@@ -23,7 +22,6 @@ export default async function NewEventPage({
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  await requireRole("organizer", "/organizer/events/new");
   const { error } = await searchParams;
 
   return (

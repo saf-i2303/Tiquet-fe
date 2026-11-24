@@ -22,6 +22,7 @@ export interface NavItem {
 export const organizerNav: NavItem[] = [
   { href: "/organizer", label: "Dashboard", icon: "dashboard" },
   { href: "/organizer/events", label: "Event", icon: "events" },
+  { href: "/organizer/venues", label: "Venue", icon: "events" },
   { href: "/organizer/reports", label: "Laporan Penjualan", icon: "report" },
   { href: "/organizer/transactions", label: "Transaksi", icon: "transaction" },
   { href: "/organizer/team", label: "Tim & Petugas", icon: "team" },

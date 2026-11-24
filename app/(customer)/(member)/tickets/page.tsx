@@ -1,27 +1,69 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
 import { Ticket as TicketIcon } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { TicketCard } from "@/components/ticket/ticket-card";
+import { Alert } from "@/components/ui/alert";
 import { ButtonLink } from "@/components/ui/button-link";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { StatTile } from "@/components/ui/stat-tile";
-import { requireAuth } from "@/lib/guards";
-import { getTicketsByCustomer } from "@/services/ticket.service";
+import { getUserFromStorage } from "@/lib/api";
+import { PREVIEW_MODE, previewSession } from "@/lib/preview";
+import { getTicketsByCustomer } from "@/services/ticketServices";
+import type { Ticket } from "@/types/ticket";
 
-export const metadata: Metadata = {
-  title: "Tiket Saya",
-};
+export default function MyTicketsPage() {
+  const { user } = useAuth();
+  const session = useMemo(
+    () =>
+      user ?? getUserFromStorage() ?? (PREVIEW_MODE ? previewSession("customer") : null),
+    [user],
+  );
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
-export default async function MyTicketsPage() {
-  const session = await requireAuth("/tickets");
-  const tickets = await getTicketsByCustomer(session.id);
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    getTicketsByCustomer(session.id)
+      .then((data) => {
+        if (!active) return;
+        setTickets(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (active) setErrorMsg("Gagal memuat tiket");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session]);
 
   const active = tickets.filter((ticket) => ticket.status === "active");
   const used = tickets.filter((ticket) => ticket.status !== "active");
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="E-ticket"
         title="Tiket saya"

@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { Receipt, Ticket, TrendingUp } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card } from "@/components/ui/card";
@@ -11,13 +14,10 @@ import { Price } from "@/components/ui/price";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { orderStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import { formatDateTime } from "@/lib/utils";
-import { getOrganizerTransactions } from "@/services/organizer.service";
-
-export const metadata: Metadata = {
-  title: "Transaksi",
-};
+import { getOrganizerTransactions } from "@/services/organizerServices";
+import type { Order } from "@/types/order";
 
 const statusFilters = [
   { value: "", label: "Semua" },
@@ -27,15 +27,38 @@ const statusFilters = [
   { value: "cancelled", label: "Dibatalkan" },
 ];
 
-export default async function OrganizerTransactionsPage({
+export default function OrganizerTransactionsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-  const session = await requireRole("organizer", "/organizer/transactions");
-  const { status = "", q = "" } = await searchParams;
-  const organizerId = session.organizerId ?? "org-001";
-  const transactions = await getOrganizerTransactions(organizerId);
+  const { status = "", q = "" } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const [transactions, setTransactions] = useState<Order[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    getOrganizerTransactions(organizerId)
+      .then((data) => {
+        if (active) setTransactions(data);
+      })
+      .catch(() => {
+        if (active) setTransactions([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading) return null;
 
   const needle = q.trim().toLowerCase();
   const filtered = transactions.filter((order) => {

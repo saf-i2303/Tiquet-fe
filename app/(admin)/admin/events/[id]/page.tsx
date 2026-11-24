@@ -1,10 +1,13 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { Check, Ticket, TrendingUp, Users, X } from "lucide-react";
+import { notFound, useRouter } from "next/navigation";
+import { Check, Ticket, TrendingUp, X } from "lucide-react";
 import { CategoryIcon } from "@/components/event/category-icon";
 import { EventMeta } from "@/components/shared/event-meta";
 import { StatusBadge } from "@/components/shared/status-badge";
+import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -13,31 +16,96 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Price } from "@/components/ui/price";
 import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
-import { moderateEventAction } from "@/lib/actions/admin.action";
-import { categoryMeta, eventStatusMeta, orderStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { categoryMeta, eventStatusMeta } from "@/lib/constants";
+import { getApiErrorMessage } from "@/lib/api";
 import { formatRupiah } from "@/lib/utils";
-import { getAllEvents, getAllOrders } from "@/services/admin.service";
+import { approveEvent, getAdminEvent, rejectEvent } from "@/services/adminServices";
+import { toEvent } from "@/services/eventServices";
+import { listAdminTickets, type TicketTypeRecord } from "@/services/ticketServices";
+import type { EventWithStats } from "@/types/event";
 
-export const metadata: Metadata = {
-  title: "Review Event",
-};
-
-export default async function AdminEventDetailPage({
+export default function AdminEventDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  await requireRole("super_admin", "/admin/events");
-  const { id } = await params;
+  const { id } = use(params);
+  const router = useRouter();
+  const [event, setEvent] = useState<EventWithStats | null>(null);
+  const [tickets, setTickets] = useState<TicketTypeRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const [events, orders] = await Promise.all([getAllEvents(), getAllOrders()]);
-  const event = events.find((item) => item.id === id);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      getAdminEvent(id),
+      listAdminTickets(id).catch(() => [] as TicketTypeRecord[]),
+    ])
+      .then(([rawEvent, ticketList]) => {
+        if (!active) return;
+        setEvent(toEvent(rawEvent, ticketList));
+        setTickets(ticketList);
+        setErrorMsg("");
+      })
+      .catch((error) => {
+        if (!active) return;
+        setEvent(null);
+        setTickets([]);
+        setErrorMsg(getApiErrorMessage(error, "Gagal memuat detail event."));
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [id]);
+
+  async function handleDecision(decision: "published" | "rejected") {
+    setErrorMsg("");
+    try {
+      if (decision === "published") {
+        await approveEvent(id);
+      } else {
+        const reason = window.prompt("Alasan penolakan event:");
+        if (reason === null || !reason.trim()) return;
+        await rejectEvent(id, reason.trim());
+      }
+      setEvent((current) => (current ? { ...current, status: decision } : current));
+      router.refresh();
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Gagal menyimpan keputusan moderasi."));
+    }
+  }
+
+  if (isLoading) {
+    return (
+      <main>
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      </main>
+    );
+  }
+  if (errorMsg) {
+    return (
+      <main>
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      </main>
+    );
+  }
+
   if (!event) notFound();
 
-  const eventOrders = orders.filter((order) => order.eventId === event.id);
-  const paidOrders = eventOrders.filter((order) => order.status === "paid");
-  const revenue = paidOrders.reduce((total, order) => total + order.total, 0);
+  const revenue = tickets.reduce(
+    (total, ticket) => total + ticket.price * (ticket.sold ?? 0),
+    0,
+  );
+  const availableQuota = Math.max(0, event.totalQuota - event.totalSold);
+  const activeTickets = tickets.filter((ticket) => ticket.is_active !== false).length;
   const meta = categoryMeta[event.category];
 
   return (
@@ -75,22 +143,23 @@ export default async function AdminEventDetailPage({
         actions={
           <>
             {event.status !== "published" && (
-              <form action={moderateEventAction}>
-                <input type="hidden" name="eventId" value={event.id} />
-                <input type="hidden" name="decision" value="published" />
-                <Button size="sm">
-                  <Check className="h-3.5 w-3.5" /> Setujui &amp; tayangkan
-                </Button>
-              </form>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => handleDecision("published")}
+              >
+                <Check className="h-3.5 w-3.5" /> Setujui &amp; tayangkan
+              </Button>
             )}
             {event.status !== "rejected" && (
-              <form action={moderateEventAction}>
-                <input type="hidden" name="eventId" value={event.id} />
-                <input type="hidden" name="decision" value="rejected" />
-                <Button variant="danger" size="sm">
-                  <X className="h-3.5 w-3.5" /> Tolak event
-                </Button>
-              </form>
+              <Button
+                type="button"
+                variant="danger"
+                size="sm"
+                onClick={() => handleDecision("rejected")}
+              >
+                <X className="h-3.5 w-3.5" /> Tolak event
+              </Button>
             )}
           </>
         }
@@ -106,21 +175,21 @@ export default async function AdminEventDetailPage({
         <StatTile
           label="Pendapatan"
           value={formatRupiah(revenue)}
-          hint="Dari order lunas"
+          hint="Estimasi dari tiket terjual"
           icon={<TrendingUp className="h-4 w-4" />}
           tone="green"
         />
         <StatTile
-          label="Transaksi"
-          value={eventOrders.length}
-          hint={`${paidOrders.length} lunas`}
-          icon={<Users className="h-4 w-4" />}
+          label="Kategori aktif"
+          value={activeTickets}
+          hint={`dari ${tickets.length} kategori`}
+          icon={<Ticket className="h-4 w-4" />}
           tone="gold"
         />
         <StatTile
-          label="Kategori tiket"
-          value={event.ticketTypes.length}
-          hint="Jenis tiket"
+          label="Kuota tersedia"
+          value={availableQuota.toLocaleString("id-ID")}
+          hint="Belum terjual"
           tone="blue"
         />
       </div>
@@ -153,25 +222,37 @@ export default async function AdminEventDetailPage({
               <EmptyState title="Belum ada kategori tiket." className="mt-4" />
             ) : (
               <div className="mt-4 space-y-3">
-                {event.ticketTypes.map((ticket) => (
-                  <div key={ticket.id} className="rounded-control border border-line p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div>
-                        <div className="font-semibold text-navy-900">{ticket.name}</div>
-                        <p className="mt-0.5 text-sm text-muted">{ticket.description}</p>
-                      </div>
-                      <div className="text-right">
-                        <Price value={ticket.price} className="text-base" />
-                        <div className="text-xs text-muted">
-                          Maks. {ticket.maxPerOrder} / transaksi
+                {event.ticketTypes.map((ticket) => {
+                  const rawTicket = tickets.find((item) => item.id === ticket.id);
+                  return (
+                    <div key={ticket.id} className="rounded-control border border-line p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="font-semibold text-navy-900">{ticket.name}</div>
+                          <p className="mt-0.5 text-sm text-muted">{ticket.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <Price value={ticket.price} className="text-base" />
+                          <div className="text-xs text-muted">
+                            Maks. {ticket.maxPerOrder} / transaksi
+                          </div>
                         </div>
                       </div>
+                      <div className="mt-3">
+                        <Progress value={ticket.sold} total={ticket.quota} label={ticket.name} />
+                      </div>
+                      {rawTicket && (
+                        <div className="mt-2 flex flex-wrap gap-x-4 text-xs text-muted">
+                          <span>Direservasi: {rawTicket.reserved ?? 0}</span>
+                          <span>
+                            Tersedia: {rawTicket.available ?? Math.max(0, ticket.quota - ticket.sold)}
+                          </span>
+                          <span>Status: {rawTicket.sale_status ?? "—"}</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="mt-3">
-                      <Progress value={ticket.sold} total={ticket.quota} label={ticket.name} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -186,33 +267,6 @@ export default async function AdminEventDetailPage({
               <li>Harga tiket wajar dan kuota tersedia.</li>
               <li>Organizer berstatus terverifikasi.</li>
             </ul>
-          </Card>
-
-          <Card className="overflow-hidden">
-            <CardHeader title="Order terbaru" className="p-4" />
-            {eventOrders.length === 0 ? (
-              <EmptyState title="Belum ada order untuk event ini." className="m-4" />
-            ) : (
-              <div className="divide-y divide-line border-t border-line">
-                {eventOrders.slice(0, 4).map((order) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between gap-2 px-4 py-2.5"
-                  >
-                    <div className="min-w-0">
-                      <div className="font-mono text-xs text-navy-900">{order.id}</div>
-                      <div className="text-xs text-muted">{order.customerName}</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-semibold text-navy-900">
-                        <Price value={order.total} />
-                      </div>
-                      <StatusBadge value={order.status} map={orderStatusMeta} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </Card>
         </aside>
       </div>

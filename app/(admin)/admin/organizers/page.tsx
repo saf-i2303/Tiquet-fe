@@ -1,5 +1,8 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { BadgeCheck, Building2, FileText, ShieldCheck, Users } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -11,15 +14,14 @@ import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { Price } from "@/components/ui/price";
 import { StatTile } from "@/components/ui/stat-tile";
-import { verifyOrganizerAction } from "@/lib/actions/admin.action";
 import { organizerStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { getApiErrorMessage } from "@/lib/api";
 import { formatDate, formatRupiah } from "@/lib/utils";
-import { getOrganizersList } from "@/services/admin.service";
-
-export const metadata: Metadata = {
-  title: "Verifikasi Organizer",
-};
+import {
+  getOrganizersList,
+  rejectOrganizer,
+  verifyOrganizer,
+} from "@/services/adminServices";
 
 const statusFilters = [
   { value: "", label: "Semua" },
@@ -29,14 +31,56 @@ const statusFilters = [
   { value: "suspended", label: "Ditangguhkan" },
 ];
 
-export default async function AdminOrganizersPage({
+export default function AdminOrganizersPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; q?: string; saved?: string }>;
 }) {
-  await requireRole("super_admin", "/admin/organizers");
-  const { status = "", q = "", saved } = await searchParams;
-  const organizers = await getOrganizersList();
+  const { status = "", q = "", saved } = use(searchParams);
+  const router = useRouter();
+  const [organizers, setOrganizers] = useState<Awaited<ReturnType<typeof getOrganizersList>>>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getOrganizersList()
+      .then((data) => {
+        if (!active) return;
+        setOrganizers(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setOrganizers([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function handleDecision(id: string, decision: "verified" | "rejected") {
+    setErrorMsg("");
+    try {
+      if (decision === "verified") {
+        await verifyOrganizer(id);
+      } else {
+        const reason = window.prompt("Alasan penolakan organizer:");
+        if (reason === null || !reason.trim()) return;
+        await rejectOrganizer(id, reason.trim());
+      }
+      setOrganizers((current) =>
+        current.map((item) => (item.id === id ? { ...item, status: decision } : item)),
+      );
+      router.refresh();
+    } catch (error) {
+      setErrorMsg(getApiErrorMessage(error, "Gagal menyimpan keputusan verifikasi."));
+    }
+  }
 
   const needle = q.trim().toLowerCase();
   const filtered = organizers.filter((organizer) => {
@@ -56,6 +100,17 @@ export default async function AdminOrganizersPage({
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Kepatuhan"
         title="Verifikasi organizer"
@@ -154,20 +209,21 @@ export default async function AdminOrganizersPage({
                   </ButtonLink>
                   {organizer.status === "pending" && (
                     <>
-                      <form action={verifyOrganizerAction}>
-                        <input type="hidden" name="organizerId" value={organizer.id} />
-                        <input type="hidden" name="decision" value="verified" />
-                        <Button size="sm">
-                          <ShieldCheck className="h-3.5 w-3.5" /> Setujui
-                        </Button>
-                      </form>
-                      <form action={verifyOrganizerAction}>
-                        <input type="hidden" name="organizerId" value={organizer.id} />
-                        <input type="hidden" name="decision" value="rejected" />
-                        <Button variant="danger" size="sm">
-                          Tolak
-                        </Button>
-                      </form>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handleDecision(organizer.id, "verified")}
+                      >
+                        <ShieldCheck className="h-3.5 w-3.5" /> Setujui
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="danger"
+                        size="sm"
+                        onClick={() => handleDecision(organizer.id, "rejected")}
+                      >
+                        Tolak
+                      </Button>
                     </>
                   )}
                 </div>

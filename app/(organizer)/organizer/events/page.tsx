@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { CalendarDays, Plus, Ticket, Users } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { EventMeta } from "@/components/shared/event-meta";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { ButtonLink } from "@/components/ui/button-link";
@@ -12,12 +15,9 @@ import { Price } from "@/components/ui/price";
 import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
 import { eventStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
-import { getOrganizerEvents } from "@/services/organizer.service";
-
-export const metadata: Metadata = {
-  title: "Event Saya",
-};
+import { requireOrganizerId } from "@/lib/ownership";
+import { getOrganizerEvents } from "@/services/organizerServices";
+import type { EventWithStats } from "@/types/event";
 
 const statusFilters = [
   { value: "", label: "Semua" },
@@ -28,15 +28,39 @@ const statusFilters = [
   { value: "ended", label: "Selesai" },
 ];
 
-export default async function OrganizerEventsPage({
+export default function OrganizerEventsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-  const session = await requireRole("organizer", "/organizer/events");
-  const { status = "", q = "" } = await searchParams;
-  const organizerId = session.organizerId ?? "org-001";
-  const events = await getOrganizerEvents(organizerId);
+  const { status = "", q = "" } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const [events, setEvents] = useState<EventWithStats[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
+
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    getOrganizerEvents(organizerId)
+      .then((data) => {
+        if (!active) return;
+        setEvents(data);
+      })
+      .catch(() => {
+        if (active) setEvents([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading) return null;
 
   const needle = q.trim().toLowerCase();
   const filtered = events.filter((event) => {

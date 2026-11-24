@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import {
   Activity,
   BadgeCheck,
@@ -8,20 +10,16 @@ import {
   ShieldCheck,
   UserCog,
 } from "lucide-react";
+import { Alert } from "@/components/ui/alert";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterBar } from "@/components/ui/filter-bar";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
-import { requireRole } from "@/lib/guards";
 import { formatDate, formatDateTime } from "@/lib/utils";
-import { getAuditLogs } from "@/services/admin.service";
-import type { AuditLog } from "@/lib/mocks/settings";
-
-export const metadata: Metadata = {
-  title: "Log Aktivitas",
-};
+import { getAuditLogs } from "@/services/adminServices";
+import type { AuditLog } from "@/types/admin";
 
 const actorFilters = [
   { value: "", label: "Semua" },
@@ -61,27 +59,47 @@ function actionIcon(action: string) {
 
 const dateKey = (iso: string) => new Date(iso).toISOString().slice(0, 10);
 
-export default async function AdminActivityPage({
+export default function AdminActivityPage({
   searchParams,
 }: {
   searchParams: Promise<{ actor?: string; q?: string }>;
 }) {
-  await requireRole("super_admin", "/admin/activity");
-  const { actor = "", q = "" } = await searchParams;
-  const logs = await getAuditLogs();
+  const { actor = "", q = "" } = use(searchParams);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    getAuditLogs()
+      .then((data) => {
+        if (!active) return;
+        setLogs(data);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setLogs([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const needle = q.trim().toLowerCase();
-  const filtered = logs
-    .filter((log) => {
-      const matchActor = !actor || actorKey(log) === actor;
-      const matchQuery =
-        !needle ||
-        log.action.toLowerCase().includes(needle) ||
-        log.target.toLowerCase().includes(needle) ||
-        log.actor.toLowerCase().includes(needle);
-      return matchActor && matchQuery;
-    })
-    .sort((a, b) => b.at.localeCompare(a.at));
+  const filtered = logs.filter((log) => {
+    const matchActor = !actor || actorKey(log) === actor;
+    const matchQuery =
+      !needle ||
+      log["action"].toLowerCase().includes(needle) ||
+      log.target.toLowerCase().includes(needle) ||
+      log.actor.toLowerCase().includes(needle);
+    return matchActor && matchQuery;
+  });
 
   const grouped = new Map<string, AuditLog[]>();
   for (const log of filtered) {
@@ -101,6 +119,17 @@ export default async function AdminActivityPage({
         title="Log aktivitas"
         subtitle="Jejak audit seluruh tindakan penting admin, organizer, dan sistem di platform."
       />
+
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
 
       <div className="stat-grid mb-6">
         <StatTile
@@ -177,7 +206,7 @@ export default async function AdminActivityPage({
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="inline-flex items-center gap-1 font-semibold text-navy-900">
-                          {actionIcon(log.action)} {log.action}
+                          {actionIcon(log["action"])} {log["action"]}
                         </span>
                         <span className="text-xs text-muted">· {log.target}</span>
                       </div>

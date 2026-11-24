@@ -1,5 +1,7 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { CircleCheck, CircleX, Clock, Landmark, Receipt } from "lucide-react";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { TicketCard } from "@/components/ticket/ticket-card";
@@ -8,15 +10,18 @@ import { ButtonLink } from "@/components/ui/button-link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { SectionHeading } from "@/components/ui/section-heading";
 import { SummaryRow } from "@/components/ui/summary-row";
+import { useAuth } from "@/components/providers/auth-provider";
+import { getUserFromStorage } from "@/lib/api";
 import { orderStatusMeta } from "@/lib/constants";
+import { requireOwnedOrder } from "@/lib/ownership";
+import { PREVIEW_MODE, previewSession } from "@/lib/preview";
 import { formatDateTime, formatRupiah } from "@/lib/utils";
 import { getOrderById } from "@/services/order.service";
 import { getPaymentMethods } from "@/services/payment.service";
-import { getTicketsForOrder } from "@/services/ticket.service";
-
-export const metadata: Metadata = {
-  title: "Status Pembayaran",
-};
+import { getTicketsForOrder } from "@/services/ticketServices";
+import type { Order } from "@/types/order";
+import type { PaymentMethod } from "@/types/payment";
+import type { Ticket } from "@/types/ticket";
 
 const stateByStatus = {
   paid: {
@@ -49,26 +54,77 @@ const stateByStatus = {
   },
 };
 
-export default async function PaymentStatusPage({
-  params,
-}: {
-  params: Promise<{ orderId: string }>;
-}) {
-  const { orderId } = await params;
-  const order = await getOrderById(orderId);
-  if (!order) notFound();
+export default function PaymentStatusPage() {
+  const { orderId } = useParams<{ orderId: string }>();
+  const { user } = useAuth();
+  const session = useMemo(
+    () =>
+      user ?? getUserFromStorage() ?? (PREVIEW_MODE ? previewSession("customer") : null),
+    [user],
+  );
+
+  const [foundOrder, setFoundOrder] = useState<Order | undefined>(undefined);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    void (async () => {
+      try {
+        const orderData = await getOrderById(orderId);
+        if (!active) return;
+        setFoundOrder(orderData);
+
+        const [ticketData, paymentMethods] = await Promise.all([
+          orderData?.status === "paid"
+            ? getTicketsForOrder(orderData.id)
+            : Promise.resolve([] as Ticket[]),
+          getPaymentMethods(),
+        ]);
+        if (!active) return;
+        setTickets(ticketData);
+        setMethods(paymentMethods);
+        setErrorMsg("");
+      } catch {
+        if (active) setErrorMsg("Gagal memuat status pembayaran");
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [orderId, session]);
+
+  if (isLoading || !session) {
+    return (
+      <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6">
+        <Alert tone="info">Memuat data...</Alert>
+      </main>
+    );
+  }
+
+  const order = requireOwnedOrder(foundOrder, session);
 
   const state = stateByStatus[order.status];
   const Icon = state.icon;
-  const tickets = order.status === "paid" ? await getTicketsForOrder(order.id) : [];
-  const methods = await getPaymentMethods();
-  const method =
-    methods.find((item) => item.name === order.paymentMethod) ?? methods[0];
+  const method = methods.find((item) => item.name === order.paymentMethod) ?? methods[0];
   const digits = order.id.replace(/\D/g, "").slice(-8).padStart(8, "0");
   const virtualAccount = `8808 ${digits.slice(0, 4)} ${digits.slice(4)}`;
 
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6">
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <Card className="p-6 text-center">
         <Icon className={`mx-auto h-9 w-9 ${state.tone}`} strokeWidth={1.5} />
         <h1 className="type-page mt-3 text-navy-900">{state.title}</h1>

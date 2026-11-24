@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -9,6 +11,7 @@ import {
   TrendingUp,
   Wallet,
 } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { QuickLinksCard } from "@/components/shared/quick-links-card";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Alert } from "@/components/ui/alert";
@@ -21,7 +24,7 @@ import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { eventStatusMeta, orderStatusMeta, organizerStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import {
   getOrganizer,
@@ -29,23 +32,60 @@ import {
   getOrganizerRevenueByEvent,
   getOrganizerStats,
   getOrganizerTransactions,
-} from "@/services/organizer.service";
+} from "@/services/organizerServices";
+import type { EventWithStats } from "@/types/event";
+import type { Order } from "@/types/order";
+import type { Organizer } from "@/types/organizer";
 
-export const metadata: Metadata = {
-  title: "Dashboard Organizer",
-};
+export default function OrganizerDashboardPage() {
+  const { user, isLoading } = useAuth();
+  const [organizer, setOrganizer] = useState<Organizer | undefined>();
+  const [stats, setStats] = useState<Awaited<ReturnType<typeof getOrganizerStats>> | null>(null);
+  const [events, setEvents] = useState<EventWithStats[]>([]);
+  const [transactions, setTransactions] = useState<Order[]>([]);
+  const [revenueByEvent, setRevenueByEvent] = useState<
+    Awaited<ReturnType<typeof getOrganizerRevenueByEvent>>
+  >([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
 
-export default async function OrganizerDashboardPage() {
-  const session = await requireRole("organizer", "/organizer");
-  const organizerId = session.organizerId ?? "org-001";
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
 
-  const [organizer, stats, events, transactions, revenueByEvent] = await Promise.all([
-    getOrganizer(organizerId),
-    getOrganizerStats(organizerId),
-    getOrganizerEvents(organizerId),
-    getOrganizerTransactions(organizerId),
-    getOrganizerRevenueByEvent(organizerId),
-  ]);
+    Promise.all([
+      getOrganizer(organizerId),
+      getOrganizerStats(organizerId),
+      getOrganizerEvents(organizerId),
+      getOrganizerTransactions(organizerId),
+      getOrganizerRevenueByEvent(organizerId),
+    ])
+      .then(([profile, summary, eventList, orderList, revenue]) => {
+        if (!active) return;
+        setOrganizer(profile);
+        setStats(summary);
+        setEvents(eventList);
+        setTransactions(orderList);
+        setRevenueByEvent(revenue);
+      })
+      .catch(() => {
+        if (!active) return;
+        setOrganizer(undefined);
+        setStats(null);
+        setEvents([]);
+        setTransactions([]);
+        setRevenueByEvent([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading || !stats) return null;
 
   const maxRevenue = Math.max(1, ...revenueByEvent.map((item) => item.revenue));
 
@@ -53,7 +93,7 @@ export default async function OrganizerDashboardPage() {
     <main>
       <PageHeader
         kicker="Organizer"
-        title={`Halo, ${session.name.split(" ")[0]}!`}
+        title={`Halo, ${user.name.split(" ")[0]}!`}
         subtitle="Pantau penjualan, event, dan pencairan dana dari satu tempat."
         action={
           <ButtonLink href="/organizer/events/new" size="sm">

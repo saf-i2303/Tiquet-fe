@@ -25,7 +25,13 @@ const landingLinks = [
   { href: "/#faq", label: "FAQ" },
 ];
 
-export function SiteHeader({ user }: { user: SessionUser | null }) {
+export function SiteHeader({
+  user,
+  loading = false,
+}: {
+  user: SessionUser | null;
+  loading?: boolean;
+}) {
   const pathname = usePathname();
   const isLanding = pathname === "/";
   const navLinks = isLanding ? landingLinks : links;
@@ -108,7 +114,7 @@ export function SiteHeader({ user }: { user: SessionUser | null }) {
         </nav>
 
         <div className="hidden items-center gap-2 md:flex">
-          {!isLanding && user ? (
+          {loading ? null : !isLanding && user ? (
             <ProfileMenu user={user} />
           ) : (
             <>
@@ -156,7 +162,7 @@ export function SiteHeader({ user }: { user: SessionUser | null }) {
               </Link>
             ))}
             <div className="mt-2 flex gap-2 border-t border-line pt-3">
-              {!isLanding && user ? (
+              {loading ? null : !isLanding && user ? (
                 <ProfileMenu user={user} />
               ) : (
                 <>

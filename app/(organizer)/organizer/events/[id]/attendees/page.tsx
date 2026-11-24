@@ -1,10 +1,13 @@
-import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import { Download, ScanLine, Users } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
+import { requireOwnedEvent } from "@/lib/ownership";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Avatar } from "@/components/ui/avatar";
 import { BackLink } from "@/components/ui/back-link";
-import { ButtonLink } from "@/components/ui/button-link";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FilterBar } from "@/components/ui/filter-bar";
@@ -12,30 +15,80 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { attendeeStatusFilters, attendeeStatusMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDateTime, percent } from "@/lib/utils";
-import { getEventById } from "@/services/event.service";
-import { getEventAttendees } from "@/services/organizer.service";
+import { getEventById } from "@/services/eventServices";
+import { getEventAttendees } from "@/services/organizerServices";
+import type { EventWithStats } from "@/types/event";
+import type { Attendee } from "@/types/organizer";
 
-export const metadata: Metadata = {
-  title: "Data Peserta",
-};
-
-export default async function EventAttendeesPage({
+export default function EventAttendeesPage({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-  await requireRole("organizer", "/organizer/events");
-  const { id } = await params;
-  const { status = "", q = "" } = await searchParams;
+  const { id } = use(params);
+  const { status = "", q = "" } = use(searchParams);
+  const { user, isLoading } = useAuth();
+  const [event, setEvent] = useState<EventWithStats | null>(null);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
 
-  const event = await getEventById(id, { includeUnpublished: true });
-  if (!event) notFound();
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
 
-  const attendees = await getEventAttendees(event.id);
+    Promise.all([getEventById(id, { includeUnpublished: true }), getEventAttendees(id)])
+      .then(([eventData, attendeeList]) => {
+        if (!active) return;
+        setEvent(eventData ?? null);
+        setAttendees(attendeeList);
+      })
+      .catch(() => {
+        if (!active) return;
+        setEvent(null);
+        setAttendees([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [id, isLoading, user]);
+
+  const ownedEvent = event && user ? requireOwnedEvent(event, user) : null;
+  if (isLoading || !user || isDataLoading || !ownedEvent) return null;
+  const eventId = ownedEvent.id;
+
+  function handleExport() {
+    const escapeCell = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const rows = [
+      ["Nama", "Email", "Kategori Tiket", "Order", "Status", "Waktu Check-in"],
+      ...attendees.map((attendee) => [
+        attendee.name,
+        attendee.email,
+        attendee.ticketType,
+        attendee.orderId,
+        attendee.status === "checked_in" ? "Check-in" : "Belum check-in",
+        attendee.checkedInAt ?? "",
+      ]),
+    ];
+
+    const csv = rows.map((row) => row.map(escapeCell).join(",")).join("\r\n");
+    const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv; charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `peserta-${eventId}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
   const needle = q.trim().toLowerCase();
   const filtered = attendees.filter((attendee) => {
     const matchStatus = !status || attendee.status === status;
@@ -52,21 +105,17 @@ export default async function EventAttendeesPage({
 
   return (
     <main>
-      <BackLink href={`/organizer/events/${event.id}`} label="Kembali ke detail event" />
+      <BackLink href={`/organizer/events/${ownedEvent.id}`} label="Kembali ke detail event" />
 
       <PageHeader
         kicker="Data peserta"
-        title={`Peserta · ${event.title}`}
+        title={`Peserta · ${ownedEvent.title}`}
         subtitle="Pantau kehadiran peserta dan siapkan gate staff untuk proses check-in."
         className="mt-4"
         action={
-          <ButtonLink
-            href={`/organizer/events/${event.id}/attendees/export`}
-            variant="outline"
-            size="sm"
-          >
+          <Button onClick={handleExport} variant="outline" size="sm">
             <Download className="h-3.5 w-3.5" /> Ekspor CSV
-          </ButtonLink>
+          </Button>
         }
       />
 
@@ -95,7 +144,7 @@ export default async function EventAttendeesPage({
       <FilterBar
         chips={attendeeStatusFilters.map((filter) => ({
           label: filter.label,
-          href: `/organizer/events/${event.id}/attendees${
+          href: `/organizer/events/${ownedEvent.id}/attendees${
             filter.value ? `?status=${filter.value}` : ""
           }`,
           active: status === filter.value,

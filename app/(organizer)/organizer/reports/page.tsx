@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+"use client";
+
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BarChart3, Receipt, Ticket, TrendingUp, Wallet } from "lucide-react";
+import { useAuth } from "@/components/providers/auth-provider";
 import { ButtonLink } from "@/components/ui/button-link";
 import { Card, CardHeader } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -10,32 +13,65 @@ import { Progress } from "@/components/ui/progress";
 import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { categoryMeta } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
+import { requireOrganizerId } from "@/lib/ownership";
 import { formatRupiah, sum } from "@/lib/utils";
 import {
   getOrganizerEvents,
   getOrganizerRevenueByEvent,
   getOrganizerStats,
   getOrganizerTransactions,
-} from "@/services/organizer.service";
-
-export const metadata: Metadata = {
-  title: "Laporan Penjualan",
-};
+} from "@/services/organizerServices";
+import type { EventWithStats } from "@/types/event";
+import type { Order } from "@/types/order";
 
 const monthLabel = (iso: string) =>
   new Intl.DateTimeFormat("id-ID", { month: "long", year: "numeric" }).format(new Date(iso));
 
-export default async function OrganizerReportsPage() {
-  const session = await requireRole("organizer", "/organizer/reports");
-  const organizerId = session.organizerId ?? "org-001";
+export default function OrganizerReportsPage() {
+  const { user, isLoading } = useAuth();
+  const [stats, setStats] = useState<Awaited<ReturnType<typeof getOrganizerStats>> | null>(null);
+  const [events, setEvents] = useState<EventWithStats[]>([]);
+  const [revenueByEvent, setRevenueByEvent] = useState<
+    Awaited<ReturnType<typeof getOrganizerRevenueByEvent>>
+  >([]);
+  const [transactions, setTransactions] = useState<Order[]>([]);
+  const [isDataLoading, setIsDataLoading] = useState(true);
 
-  const [stats, events, revenueByEvent, transactions] = await Promise.all([
-    getOrganizerStats(organizerId),
-    getOrganizerEvents(organizerId),
-    getOrganizerRevenueByEvent(organizerId),
-    getOrganizerTransactions(organizerId),
-  ]);
+  useEffect(() => {
+    if (isLoading || !user) return;
+    let active = true;
+    const organizerId = requireOrganizerId(user);
+
+    Promise.all([
+      getOrganizerStats(organizerId),
+      getOrganizerEvents(organizerId),
+      getOrganizerRevenueByEvent(organizerId),
+      getOrganizerTransactions(organizerId),
+    ])
+      .then(([summary, eventList, revenue, orderList]) => {
+        if (!active) return;
+        setStats(summary);
+        setEvents(eventList);
+        setRevenueByEvent(revenue);
+        setTransactions(orderList);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStats(null);
+        setEvents([]);
+        setRevenueByEvent([]);
+        setTransactions([]);
+      })
+      .finally(() => {
+        if (active) setIsDataLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isLoading, user]);
+
+  if (isLoading || !user || isDataLoading || !stats) return null;
 
   const maxRevenue = Math.max(1, ...revenueByEvent.map((item) => item.revenue));
   const paidOrders = transactions.filter((order) => order.status === "paid");

@@ -17,7 +17,7 @@ import {
   LandingSteps,
 } from "@/components/landing/value";
 import { siteConfig } from "@/config/site";
-import { getFeaturedEvents } from "@/services/event.service";
+import { getFeaturedEvents } from "@/services/eventServices";
 
 export const metadata: Metadata = {
   title: `${siteConfig.name} — ${siteConfig.tagline}`,

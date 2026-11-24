@@ -59,7 +59,7 @@ export function ForgotPasswordForm() {
       return;
     }
 
-    // TODO: Ganti dengan Server Action asli
+    // TODO: Sambungkan endpoint reset password backend bila sudah tersedia.
     setTimeout(() => {
       setLoading(false);
       setStep(4); // Berhasil

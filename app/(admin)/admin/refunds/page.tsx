@@ -1,4 +1,6 @@
-import type { Metadata } from "next";
+"use client";
+
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { Clock, RotateCcw, XCircle } from "lucide-react";
 import { RefundStatusBadge } from "@/components/admin/refund-status-badge";
@@ -12,31 +14,67 @@ import { StatTile } from "@/components/ui/stat-tile";
 import { TableShell } from "@/components/ui/table-shell";
 import { routes } from "@/config/routes";
 import { refundStatusFilters } from "@/lib/constants";
-import { requireRole } from "@/lib/guards";
 import { formatDateTime } from "@/lib/utils";
 import { getRefundStats, getRefunds } from "@/services/refund.service";
-
-export const metadata: Metadata = {
-  title: "Refund",
-};
 
 /**
  * Stub halaman Refund Management (plan.md 4A Super Admin).
  * Data masih berasal dari fixture development; integrasi API menyusul.
  */
-export default async function AdminRefundsPage({
+export default function AdminRefundsPage({
   searchParams,
 }: {
   searchParams: Promise<{ status?: string; saved?: string }>;
 }) {
-  await requireRole("super_admin", "/admin/refunds");
-  const { status = "", saved } = await searchParams;
-  const [refunds, stats] = await Promise.all([getRefunds(), getRefundStats()]);
+  const { status = "", saved } = use(searchParams);
+  const [refunds, setRefunds] = useState<Awaited<ReturnType<typeof getRefunds>>>([]);
+  const [stats, setStats] = useState<Awaited<ReturnType<typeof getRefundStats>>>({
+    total: 0,
+    requested: 0,
+    inProgress: 0,
+    completed: 0,
+    rejected: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([getRefunds(), getRefundStats()])
+      .then(([nextRefunds, nextStats]) => {
+        if (!active) return;
+        setRefunds(nextRefunds);
+        setStats(nextStats);
+        setErrorMsg("");
+      })
+      .catch(() => {
+        if (!active) return;
+        setRefunds([]);
+        setErrorMsg("Gagal memuat data admin");
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const filtered = status ? refunds.filter((refund) => refund.status === status) : refunds;
 
   return (
     <main>
+      {isLoading && (
+        <Alert tone="info" className="mb-4">
+          Memuat data...
+        </Alert>
+      )}
+      {errorMsg && (
+        <Alert tone="danger" className="mb-4">
+          {errorMsg}
+        </Alert>
+      )}
+
       <PageHeader
         kicker="Keuangan platform"
         title="Pengelolaan refund"
